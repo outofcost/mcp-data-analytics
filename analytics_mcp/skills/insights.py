@@ -21,8 +21,8 @@ from analytics_mcp.models import (Conclusion, FindingsResult,
                                   Recommendation, ReportResult)
 from analytics_mcp.registry import Skill, register_skill, tool
 from analytics_mcp.report_pdf import write_pdf
-from analytics_mcp.store import Analysis
-from analytics_mcp.style import MONTHS_FULL
+from analytics_mcp.store import Analysis, Chart
+from analytics_mcp.style import MONTHS_FULL, format_number
 
 MAX_CATEGORY_COLUMNS = 4
 MAX_VALUES = 12
@@ -138,6 +138,11 @@ def category_facts(data: pd.DataFrame, name: str, measure: str,
     return facts
 
 
+def is_number(value: Any) -> bool:
+    """Отвечает, число ли это (логическое значение числом не считается)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def render(value: Any, depth: int = 0) -> list[str]:
     """Превращает вложенные цифры в список Markdown для отчёта."""
     pad = "  " * depth
@@ -149,7 +154,9 @@ def render(value: Any, depth: int = 0) -> list[str]:
                 lines.append(f"{pad}- {name}:")
                 lines += render(item, depth + 1)
             else:
-                shown = "нет данных" if item is None else item
+                shown = ("нет данных" if item is None
+                         else format_number(item) if is_number(item)
+                         else item)
                 lines.append(f"{pad}- {name}: {shown}")
     elif isinstance(value, list):
         if all(not isinstance(item, (dict, list)) for item in value):
@@ -241,7 +248,7 @@ class InsightGenerationSkill(Skill):
                      for b in range(a + 1, len(numbers))]
             pairs.sort(key=lambda pair: abs(pair[2]), reverse=True)
             facts["самые_сильные_связи"] = [
-                f"{first} и {second}: {value:+.2f}"
+                f"{first} и {second}: {value:+.2f}".replace(".", ",")
                 for first, second, value in pairs[:3]]
         facts["качество_данных"] = {
             "что_сделала_очистка": (analysis.cleaning_log
@@ -273,17 +280,18 @@ class InsightGenerationSkill(Skill):
         и пояснение с цифрой. Если форма нарушена, инструмент возвращает
         список нарушений, вызов нужно исправить и повторить.
 
-        В отчёт входят: что сделано с данными, все построенные графики
-        с подписями, выводы и рекомендации из аргументов. В Markdown
-        приложением идут все цифры из collect_findings. PDF это один файл
-        с графиками внутри, его удобно открыть или переслать. Возвращает
+        Порядок разделов задаёт сервер: главные числа, выводы,
+        рекомендации, все построенные графики с подписями, что сделано
+        с данными. В Markdown приложением идут все цифры из
+        collect_findings. PDF это один файл с графиками внутри, его удобно
+        открыть или переслать. Возвращает
         пути к файлам, ссылку на PDF (если сервер работает по HTTP)
         и список того, чего отчёту не хватает.
         """
         dataset = self.store.current(dataset_id)
-        found = [(item.headline.strip().rstrip("."), item.evidence.strip())
+        found = [(rules.phrase(item.headline), item.evidence.strip())
                  for item in conclusions]
-        advice = [(item.action.strip().rstrip("."), item.reason.strip())
+        advice = [(rules.phrase(item.action), item.reason.strip())
                   for item in recommendations]
         # Число пунктов и длину текста проверяет этот код, а не pydantic:
         # так модель получает все нарушения сразу и по-русски.
@@ -309,53 +317,52 @@ class InsightGenerationSkill(Skill):
                             "с цифрами в отчёте нет.")
 
         frame, excluded = dataset.working_frame()
-        lines = [
-            f"# {title.strip() or 'Отчёт по данным'}",
-            "",
-            f"Источник данных: `{analysis.source}`. Строк в расчёте: "
-            f"{len(frame)}. Дата отчёта: {date.today().isoformat()}.",
-            "",
-            "## Что сделано с данными",
-            "",
-        ]
-        lines += [f"- При чтении: {note}." for note in dataset.notes]
-        lines += [f"- При очистке: {action}."
-                  for action in analysis.cleaning_log]
-        if not analysis.cleaning_log:
-            lines.append("- Очистка не выполнялась.")
-        lines += ["", "## Графики", ""]
-        for chart in analysis.charts:
-            lines += [f"### {chart.title}", "",
-                      f"![{chart.title}]({chart.path.name})", ""]
-            lines += [f"- {fact}" for fact in chart.facts] + [""]
-        lines += ["## Выводы", ""]
-        lines += [f"{n}. **{head}.** {body}"
-                  for n, (head, body) in enumerate(found, 1)]
-        lines += ["", "## Рекомендации", ""]
-        lines += [f"{n}. **{head}.** {body}"
-                  for n, (head, body) in enumerate(advice, 1)]
-        lines += [
-            "", "## Как собран отчёт", "",
-            "Цифры и графики посчитал сервер. Выводы и рекомендации "
-            "сформулировала языковая модель по этим цифрам. Строк, "
-            f"помеченных как выбросы и не вошедших в расчёт: {excluded}.",
-            "",
-        ]
+        names = list(dataset.roles)
+
+        def tidy(text: str) -> str:
+            """Приводит строку к виду отчёта, имена колонок к подписям."""
+            return rules.tidy(text, names)
+
+        facts = analysis.findings or {}
+        period = facts.get("период")
+        report = rules.Report(
+            title=tidy(title.strip()) or "Отчёт по данным",
+            source=analysis.source,
+            period=(tidy(f"{period['начало']} – {period['конец']}")
+                    if period else ""),
+            rows=len(frame),
+            created=date.today().strftime("%d.%m.%Y"),
+            tiles=[(label, tidy(value)) for label, value
+                   in rules.key_numbers(analysis.findings,
+                                        col.pick_profit(dataset.roles))],
+            conclusions=[(tidy(head), tidy(body)) for head, body in found],
+            recommendations=[(tidy(head), tidy(body))
+                             for head, body in advice],
+            charts=[Chart(chart.key, chart.title, chart.path,
+                          [tidy(fact) for fact in chart.facts])
+                    for chart in analysis.charts],
+            reading=[rules.sentence(tidy(note)) for note in dataset.notes],
+            cleaning=[rules.sentence(tidy(action))
+                      for action in analysis.cleaning_log]
+            or ["Очистка не выполнялась."],
+            excluded=excluded,
+        )
         # Полный список цифр идёт приложением только в Markdown: он нужен
         # для сверки выводов, а в PDF занимал три страницы сплошного списка.
         appendix = []
         if analysis.findings:
             appendix = ["## Приложение. Цифры, на которых стоят выводы", "",
-                        *render(analysis.findings), ""]
+                        *map(tidy, render(analysis.findings)), ""]
 
         folder = self.settings.output_dir / analysis.root_id
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / "report.md"
-        path.write_text("\n".join(lines + appendix), encoding="utf-8")
+        path.write_text("\n".join(rules.to_markdown(report) + appendix),
+                        encoding="utf-8")
         # Тот же отчёт одним файлом: в Markdown графики лежат рядом
         # отдельными картинками, в PDF они внутри.
         pdf_path = folder / "report.pdf"
-        write_pdf(lines, folder, pdf_path)
+        pages = write_pdf(report, pdf_path)
         analysis.report_path = path
 
         report_url = ""
@@ -373,6 +380,7 @@ class InsightGenerationSkill(Skill):
             pdf_path=self.settings.relative(pdf_path),
             report_url=report_url,
             charts=len(analysis.charts),
+            pages=pages,
             warnings=warnings,
             next_step=self.next_step(dataset),
         )

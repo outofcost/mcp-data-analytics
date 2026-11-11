@@ -171,6 +171,7 @@ class ReportResult(BaseModel):
                                         "Пусто, если сервер запущен "
                                         "локально")
     charts: int = Field(description="Сколько графиков в отчёте")
+    pages: int = Field(description="Сколько страниц в PDF")
     warnings: list[str] = Field(
         description="Чего отчёту не хватает. Пустой список: всё на месте")
     next_step: str = Field(description=NEXT_STEP)
