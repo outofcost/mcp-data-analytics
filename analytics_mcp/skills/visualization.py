@@ -21,7 +21,7 @@ from analytics_mcp.charts import publish_chart
 from analytics_mcp.models import ChartSuggestion, SuggestResult
 from analytics_mcp.registry import Skill, register_skill, tool
 from analytics_mcp.store import Analysis, Dataset
-from analytics_mcp.style import (column_label, column_title,
+from analytics_mcp.style import (by_column, column_label, column_title,
                                  format_number)
 
 MIN_CHARTS = 3
@@ -52,6 +52,11 @@ def percent(part: float, whole: float, signed: bool = False) -> str:
     text = f"{100 * part / whole:+.1f}%" if signed else (
         f"{100 * part / whole:.1f}%")
     return text.replace(".", ",")
+
+
+def signed(value: float) -> str:
+    """Пишет коэффициент корреляции: запятая в дроби и знак минуса."""
+    return f"{value:.2f}".replace(".", ",").replace("-", "−")
 
 
 @register_skill
@@ -212,7 +217,7 @@ class VisualizationSkill(Skill):
                           label=str(value))
             axes.legend(frameon=False, fontsize=9, title_fontsize=9,
                         title=column_title(group_col))
-            title += f" по колонке «{column_title(group_col)}»"
+            title += f" {by_column(group_col)}"
             axes.set_title(title, loc="left", fontsize=13, color=style.TEXT,
                            pad=12)
         else:
@@ -313,7 +318,7 @@ class VisualizationSkill(Skill):
         median = values.median()
         axes.axvline(median / scale, color=style.DARK_GREEN, linestyle="--",
                      linewidth=1.5,
-                     label=f"Медиана: {format_number(median / scale)}")
+                     label=f"Медиана: {format_number(median)}")
         axes.legend(frameon=False, fontsize=9)
         axes.set_xlabel(column_label(name, scale_word), color=style.TEXT)
         axes.set_ylabel("Число строк", color=style.TEXT)
@@ -347,7 +352,7 @@ class VisualizationSkill(Skill):
             shown["Прочие"] = totals.iloc[MAX_BARS - 1:].sum()
 
         scale, scale_word = style.pick_scale(shown.abs().max())
-        title = f"{measure} по колонке «{column_title(name)}»"
+        title = f"{measure} {by_column(name)}"
         figure, axes = style.new_figure(title)
         colors = [style.GREY if value < 0 else style.GREEN
                   for value in shown[::-1]]
@@ -417,11 +422,14 @@ class VisualizationSkill(Skill):
         for row in range(len(numbers)):
             for column in range(len(numbers)):
                 value = matrix.iloc[row, column]
-                axes.text(column, row, f"{value:.2f}".replace(".", ","),
+                axes.text(column, row, signed(value),
                           ha="center", va="center", fontsize=10,
                           color="white" if abs(value) > 0.6 else style.TEXT)
         bar = figure.colorbar(image, ax=axes, fraction=0.046, pad=0.04)
         bar.set_label("Коэффициент корреляции Пирсона", color=style.TEXT)
+        # Шкала пишет числа так же, как ячейки: с запятой и знаком минуса.
+        bar.ax.yaxis.set_major_formatter(
+            FuncFormatter(lambda value, _: signed(value)))
 
         pairs = [(numbers[a], numbers[b], matrix.iloc[a, b])
                  for a in range(len(numbers))

@@ -1,8 +1,11 @@
-"""Формат ответов инструментов.
+"""Формат ответов инструментов и составных аргументов.
 
 Из этих моделей SDK строит выходную схему (``outputSchema``) каждого
 инструмента: клиент заранее знает, какие поля придут. В каждом ответе есть
 ``next_step``: подсказка модели, что вызвать дальше.
+
+``Conclusion`` и ``Recommendation`` задают форму аргументов ``save_report``:
+по ним SDK строит входную схему, и любая модель пишет выводы в одном виде.
 
 У инструментов с графиками выходной схемы нет: SDK не строит её для ответа
 с картинкой. Они возвращают ``ChartResult`` текстом в формате JSON и
@@ -136,10 +139,34 @@ class FindingsResult(BaseModel):
     next_step: str = Field(description=NEXT_STEP)
 
 
+class Conclusion(BaseModel):
+    """Один вывод отчёта: аргумент save_report."""
+
+    headline: str = Field(description=(
+        "Утверждение с глаголом, до 8 слов, без тире и без точки "
+        "в конце. Пример: «Готовые обеды продаются в убыток»"))
+    evidence: str = Field(description=(
+        "Одно-два предложения с цифрой из collect_findings, до 180 знаков"))
+
+
+class Recommendation(BaseModel):
+    """Одна рекомендация отчёта: аргумент save_report."""
+
+    action: str = Field(description=(
+        "Что сделать: до 10 слов, начинается с глагола в неопределённой "
+        "форме. Пример: «Пересчитать цену готовых обедов»"))
+    reason: str = Field(description=(
+        "Основание: цифра или факт из collect_findings, до 180 знаков"))
+
+
 class ReportResult(BaseModel):
-    """Ответ save_report: где лежит отчёт и что в него вошло."""
+    """Ответ save_report: готовый текст для чата и где лежит отчёт."""
 
     dataset_id: str = Field(description=DATASET_ID)
+    chat_summary: str = Field(
+        description="Готовый ответ пользователю: выводы, рекомендации, что "
+                    "сделала очистка и где отчёт. Покажите его без "
+                    "изменений")
     report_path: str = Field(description="Путь к отчёту в Markdown от "
                                          "корня репозитория")
     pdf_path: str = Field(description="Путь к тому же отчёту в PDF: один "
@@ -148,6 +175,7 @@ class ReportResult(BaseModel):
                                         "Пусто, если сервер запущен "
                                         "локально")
     charts: int = Field(description="Сколько графиков в отчёте")
+    pages: int = Field(description="Сколько страниц в PDF")
     warnings: list[str] = Field(
         description="Чего отчёту не хватает. Пустой список: всё на месте")
     next_step: str = Field(description=NEXT_STEP)

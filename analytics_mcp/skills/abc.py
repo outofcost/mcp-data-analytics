@@ -17,7 +17,8 @@ from analytics_mcp import columns as cols
 from analytics_mcp import style
 from analytics_mcp.charts import publish_chart
 from analytics_mcp.registry import Skill, register_skill, tool
-from analytics_mcp.style import column_label, column_title, format_number
+from analytics_mcp.style import (by_column, column_label, column_title,
+                                 format_number, plural)
 
 # Границы групп по накопленной доле. Значение идёт в группу A, пока сумма
 # значений до него меньше 80% итога, в группу B, пока она меньше 95%.
@@ -104,22 +105,22 @@ class AbcAnalysisSkill(Skill):
 
         shown = totals.head(MAX_BARS)
         scale, scale_word = style.pick_scale(shown.max())
-        title = (f"ABC-анализ: {column_title(value_col)} по колонке "
-                 f"«{column_title(col)}»")
+        title = f"ABC-анализ: {column_title(value_col)} {by_column(col)}"
         figure, axes = style.new_figure(title)
         positions = range(len(shown))
         axes.bar(positions, shown / scale,
                  color=[GROUP_COLORS[groups[v]] for v in shown.index])
+        # Повёрнутая подпись заканчивается под своим столбцом.
         axes.set_xticks(positions,
-                        [str(v)[:LABEL_CHARS] for v in shown.index])
+                        [str(v)[:LABEL_CHARS] for v in shown.index],
+                        rotation=30, ha="right", rotation_mode="anchor")
         axes.set_ylabel(column_label(value_col, scale_word),
                         color=style.TEXT)
         axes.yaxis.set_major_formatter(
             FuncFormatter(lambda value, _: format_number(value)))
-        axes.tick_params(axis="x", rotation=30)
         line = axes.twinx()
         line.plot(positions, 100 * share.cumsum().head(MAX_BARS),
-                  color=style.TEXT, marker="o", markersize=4, linewidth=1.5)
+                  color=style.GREY, marker="o", markersize=4, linewidth=1.5)
         line.set_ylim(0, 105)
         line.set_ylabel("Накопленная доля, %", color=style.TEXT)
         line.spines[["top"]].set_visible(False)
@@ -133,8 +134,10 @@ class AbcAnalysisSkill(Skill):
             members = groups[groups == name].index
             if len(members):
                 part = f"{100 * share[members].sum():.1f}%".replace(".", ",")
+                word = plural(len(members), "значение", "значения",
+                              "значений")
                 facts.append(
-                    f"Группа {name} ({len(members)} знач., {part} суммы): "
+                    f"Группа {name} ({len(members)} {word}, {part} суммы): "
                     + ", ".join(str(v) for v in members[:10])
                     + (" и другие." if len(members) > 10 else "."))
         if len(totals) > MAX_BARS:

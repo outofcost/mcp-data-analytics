@@ -16,11 +16,13 @@ from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
 from analytics_mcp import columns as col
-from analytics_mcp.models import FindingsResult, ReportResult
+from analytics_mcp import report as rep
+from analytics_mcp.models import (Conclusion, FindingsResult,
+                                  Recommendation, ReportResult)
 from analytics_mcp.registry import Skill, register_skill, tool
 from analytics_mcp.report_pdf import write_pdf
-from analytics_mcp.store import Analysis
-from analytics_mcp.style import MONTHS_FULL
+from analytics_mcp.store import Analysis, Chart
+from analytics_mcp.style import MONTHS_FULL, format_number
 
 MAX_CATEGORY_COLUMNS = 4
 MAX_VALUES = 12
@@ -28,10 +30,12 @@ MONTHS_FOR_SEASONALITY = 24
 # Слова в имени колонки, по которым узнаётся процент или доля.
 PERCENT_WORDS = ("%", "процент", "скидк", "discount", "доля", "share")
 HOW_TO_USE = (
-    "Сформулируйте 3–5 выводов и 3–5 практических рекомендаций. Каждый "
-    "вывод опирается на цифру из facts, свои цифры не считайте. Учтите "
-    "сведения об очистке и исключённых выбросах. Затем вызовите "
-    "save_report.")
+    "Сформулируйте от 3 до 5 выводов и от 2 до 4 практических "
+    "рекомендаций, самые важные первыми. Вывод это короткое утверждение "
+    "(headline, до 8 слов) и пояснение с цифрой из facts (evidence, до 180 "
+    "знаков). Рекомендация это действие (action, до 10 слов) и основание "
+    "(reason, до 180 знаков). Свои цифры не считайте. Учтите сведения об "
+    "очистке и исключённых выбросах. Затем вызовите save_report.")
 
 
 def rounded(value: float) -> float:
@@ -145,7 +149,10 @@ def render(value: Any, depth: int = 0) -> list[str]:
                 lines.append(f"{pad}- {name}:")
                 lines += render(item, depth + 1)
             else:
-                shown = "нет данных" if item is None else item
+                shown = ("нет данных" if item is None
+                         else format_number(item)
+                         if isinstance(item, (int, float))
+                         else item)
                 lines.append(f"{pad}- {name}: {shown}")
     elif isinstance(value, list):
         if all(not isinstance(item, (dict, list)) for item in value):
@@ -163,7 +170,12 @@ class InsightGenerationSkill(Skill):
     title = "Выводы"
     guide = ("collect_findings считает цифры для выводов. По ним напишите "
              "выводы и рекомендации и передайте их в save_report: он "
-             "соберёт отчёт с графиками.")
+             "соберёт отчёт с графиками и вернёт готовый ответ для "
+             "пользователя.")
+    rules = (
+        "После save_report покажи пользователю текст из поля chat_summary "
+        "без изменений: это готовый ответ.",
+    )
 
     def is_done(self, analysis: Analysis) -> bool:
         """Этап выполнен, когда отчёт сохранён."""
@@ -177,7 +189,8 @@ class InsightGenerationSkill(Skill):
         return ("Напишите выводы и рекомендации по цифрам из "
                 "collect_findings и вызовите save_report(dataset_id=\""
                 f"{analysis.current_id}\", title, conclusions, "
-                "recommendations).")
+                "recommendations). Вывод: headline и evidence. "
+                "Рекомендация: action и reason.")
 
     @tool(title="Цифры для выводов")
     def collect_findings(
@@ -236,7 +249,7 @@ class InsightGenerationSkill(Skill):
                      for b in range(a + 1, len(numbers))]
             pairs.sort(key=lambda pair: abs(pair[2]), reverse=True)
             facts["самые_сильные_связи"] = [
-                f"{first} и {second}: {value:+.2f}"
+                f"{first} и {second}: {value:+.2f}".replace(".", ",")
                 for first, second, value in pairs[:3]]
         facts["качество_данных"] = {
             "что_сделала_очистка": (analysis.cleaning_log
@@ -255,31 +268,44 @@ class InsightGenerationSkill(Skill):
         dataset_id: Annotated[str, Field(
             description="Идентификатор таблицы, по которой шёл анализ")],
         title: Annotated[str, Field(description="Заголовок отчёта")],
-        conclusions: Annotated[list[str], Field(
-            description="Ключевые выводы, каждый отдельной строкой "
-                        "с цифрой из collect_findings")],
-        recommendations: Annotated[list[str], Field(
-            description="Практические рекомендации, каждая отдельной "
-                        "строкой")],
+        conclusions: Annotated[list[Conclusion], Field(
+            description="От 3 до 5 выводов, самый важный первым",
+            json_schema_extra={"minItems": 3, "maxItems": 5})],
+        recommendations: Annotated[list[Recommendation], Field(
+            description="От 2 до 4 рекомендаций, самая важная первой",
+            json_schema_extra={"minItems": 2, "maxItems": 4})],
     ) -> ReportResult:
         """Собирает отчёт и сохраняет его в двух видах: Markdown и PDF.
 
-        В отчёт входят: что сделано с данными, все построенные графики
-        с подписями, выводы и рекомендации из аргументов. В Markdown
-        приложением идут все цифры из collect_findings. PDF это один файл
-        с графиками внутри, его удобно открыть или переслать. Возвращает
-        пути к файлам, ссылку на PDF (если сервер работает по HTTP)
-        и список того, чего отчёту не хватает.
+        Выводы и рекомендации передаются объектами: короткая фраза
+        и пояснение с цифрой. Если форма нарушена, инструмент возвращает
+        список нарушений, вызов нужно исправить и повторить.
+
+        Порядок разделов задаёт сервер: главные числа, выводы,
+        рекомендации, все построенные графики с подписями, что сделано
+        с данными. В Markdown приложением идут все цифры из
+        collect_findings. PDF это один файл с графиками внутри, его удобно
+        открыть или переслать. Возвращает готовый короткий ответ для
+        пользователя (chat_summary), пути к файлам, ссылку на PDF (если
+        сервер работает по HTTP) и список того, чего отчёту не хватает.
         """
-        conclusions = [text.strip() for text in conclusions if text.strip()]
-        recommendations = [text.strip() for text in recommendations
-                           if text.strip()]
-        if not conclusions or not recommendations:
-            raise ToolError(
-                "В отчёте должен быть хотя бы один вывод и одна "
-                "рекомендация. Передайте непустые списки conclusions и "
-                "recommendations.")
         dataset = self.store.current(dataset_id)
+        found = [(rep.phrase(item.headline), item.evidence.strip())
+                 for item in conclusions]
+        advice = [(rep.phrase(item.action), item.reason.strip())
+                  for item in recommendations]
+        # Число пунктов и длину текста проверяет этот код, а не pydantic:
+        # так модель получает все нарушения сразу и по-русски.
+        problems = rep.check_points(
+            "conclusions", found, ("headline", "evidence"),
+            rep.CONCLUSIONS, rep.HEADLINE_WORDS, need_digit=True)
+        problems += rep.check_points(
+            "recommendations", advice, ("action", "reason"),
+            rep.RECOMMENDATIONS, rep.ACTION_WORDS, need_digit=False)
+        if problems:
+            raise ToolError(
+                "save_report не принял аргументы. Исправьте и вызовите "
+                "снова:\n" + "\n".join(f"- {text}" for text in problems))
         analysis = dataset.analysis
 
         # Предупреждения: какие этапы до этого не доведены до конца.
@@ -292,51 +318,52 @@ class InsightGenerationSkill(Skill):
                             "с цифрами в отчёте нет.")
 
         frame, excluded = dataset.working_frame()
-        lines = [
-            f"# {title.strip() or 'Отчёт по данным'}",
-            "",
-            f"Источник данных: `{analysis.source}`. Строк в расчёте: "
-            f"{len(frame)}. Дата отчёта: {date.today().isoformat()}.",
-            "",
-            "## Что сделано с данными",
-            "",
-        ]
-        lines += [f"- При чтении: {note}." for note in dataset.notes]
-        lines += [f"- При очистке: {action}."
-                  for action in analysis.cleaning_log]
-        if not analysis.cleaning_log:
-            lines.append("- Очистка не выполнялась.")
-        lines += ["", "## Графики", ""]
-        for chart in analysis.charts:
-            lines += [f"### {chart.title}", "",
-                      f"![{chart.title}]({chart.path.name})", ""]
-            lines += [f"- {fact}" for fact in chart.facts] + [""]
-        lines += ["## Выводы", ""]
-        lines += [f"{n}. {text}" for n, text in enumerate(conclusions, 1)]
-        lines += ["", "## Рекомендации", ""]
-        lines += [f"{n}. {text}" for n, text in enumerate(recommendations, 1)]
-        lines += [
-            "", "## Как собран отчёт", "",
-            "Цифры и графики посчитал сервер. Выводы и рекомендации "
-            "сформулировала языковая модель по этим цифрам. Строк, "
-            f"помеченных как выбросы и не вошедших в расчёт: {excluded}.",
-            "",
-        ]
+        names = list(dataset.roles)
+
+        def tidy(text: str) -> str:
+            """Приводит строку к виду отчёта, имена колонок к подписям."""
+            return rep.tidy(text, names)
+
+        facts = analysis.findings or {}
+        period = facts.get("период")
+        report = rep.Report(
+            title=tidy(title.strip()) or "Отчёт по данным",
+            source=analysis.source,
+            period=(tidy(f"{period['начало']} – {period['конец']}")
+                    if period else ""),
+            rows=len(frame),
+            created=date.today().strftime("%d.%m.%Y"),
+            tiles=[(label, tidy(value)) for label, value
+                   in rep.key_numbers(analysis.findings,
+                                      col.pick_profit(dataset.roles))],
+            conclusions=[(tidy(head), tidy(body)) for head, body in found],
+            recommendations=[(tidy(head), tidy(body))
+                             for head, body in advice],
+            charts=[Chart(chart.key, chart.title, chart.path,
+                          [tidy(fact) for fact in chart.facts])
+                    for chart in analysis.charts],
+            reading=[rep.sentence(tidy(note)) for note in dataset.notes],
+            cleaning=[rep.sentence(tidy(action))
+                      for action in analysis.cleaning_log]
+            or ["Очистка не выполнялась."],
+            excluded=excluded,
+        )
         # Полный список цифр идёт приложением только в Markdown: он нужен
         # для сверки выводов, а в PDF занимал три страницы сплошного списка.
         appendix = []
         if analysis.findings:
             appendix = ["## Приложение. Цифры, на которых стоят выводы", "",
-                        *render(analysis.findings), ""]
+                        *map(tidy, render(analysis.findings)), ""]
 
         folder = self.settings.output_dir / analysis.root_id
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / "report.md"
-        path.write_text("\n".join(lines + appendix), encoding="utf-8")
+        path.write_text("\n".join(rep.to_markdown(report) + appendix),
+                        encoding="utf-8")
         # Тот же отчёт одним файлом: в Markdown графики лежат рядом
         # отдельными картинками, в PDF они внутри.
         pdf_path = folder / "report.pdf"
-        write_pdf(lines, folder, pdf_path)
+        pages = write_pdf(report, pdf_path)
         analysis.report_path = path
 
         report_url = ""
@@ -348,12 +375,19 @@ class InsightGenerationSkill(Skill):
             report_url = f"{self.settings.public_url}/reports/{key}/report.pdf"
         if self.settings.open_report:
             webbrowser.open(pdf_path.resolve().as_uri())
+        # Короткий ответ для чата собирает сервер, а не модель: так он
+        # одинаков в любом клиенте.
+        summary = rep.chat_summary(
+            report, analysis.cleaning_counts,
+            report_url or self.settings.relative(pdf_path), pages)
         return ReportResult(
             dataset_id=dataset_id,
+            chat_summary=summary,
             report_path=self.settings.relative(path),
             pdf_path=self.settings.relative(pdf_path),
             report_url=report_url,
             charts=len(analysis.charts),
+            pages=pages,
             warnings=warnings,
             next_step=self.next_step(dataset),
         )

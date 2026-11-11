@@ -1,10 +1,12 @@
 """Чистые функции клиентов: то, что проверяется без сети и модели."""
 
 import asyncio
+import base64
 import sys
 from pathlib import Path
 
 import httpx2
+from mcp.types import CallToolResult, ImageContent, TextContent
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "clients"))
@@ -65,6 +67,27 @@ def test_report_files_are_found_in_tool_answer(tmp_path, monkeypatch):
         folder / "report.pdf"]
 
 
+def test_client_takes_the_ready_answer_from_the_server():
+    """Клиент берёт текст для пользователя из поля chat_summary."""
+    answer = '{"dataset_id": "x", "chat_summary": "**Отчёт**\\nВыводы"}'
+    assert console_client.find_chat_summary(answer) == "**Отчёт**\nВыводы"
+    assert console_client.find_chat_summary('{"dataset_id": "x"}') == ""
+    assert console_client.find_chat_summary("ОШИБКА инструмента") == ""
+
+
+def test_chart_file_name_is_hidden_from_the_model(tmp_path):
+    """Вместо картинки модель видит строку без имени файла."""
+    png = base64.b64encode(b"\x89PNG").decode()
+    result = CallToolResult(content=[
+        TextContent(type="text", text="факты"),
+        ImageContent(type="image", data=png, mime_type="image/png")])
+    images = []
+    text = console_client.result_to_text(result, "plot_trend", tmp_path,
+                                         images)
+    assert text == "факты\n[график показан пользователю]"
+    assert [path.name for path in images] == ["chart_01_plot_trend.png"]
+
+
 def test_model_request_is_repeated_after_rate_limit(monkeypatch):
     """Отказ 429 клиент повторяет, постоянную ошибку возвращает сразу."""
     monkeypatch.setattr(console_client, "RETRY_PAUSE", 0)
@@ -86,3 +109,24 @@ def test_model_request_is_repeated_after_rate_limit(monkeypatch):
     data = asyncio.run(ask())
     assert data["choices"][0]["message"]["content"] == "ок"
     assert len(calls) == 3
+
+
+def test_bot_keeps_the_real_file_name(tmp_path, monkeypatch):
+    """Присланный файл лежит в своей папке под настоящим именем."""
+    monkeypatch.setattr(telegram_bot, "UPLOAD_DIR", tmp_path)
+    bot = telegram_bot.TelegramBot("123:TEST")
+
+    async def api(method: str, data: dict) -> dict:
+        return {"file_path": "documents/file_1.csv"}
+
+    async def get(url: str) -> httpx2.Response:
+        return httpx2.Response(200, content=b"a,b\n1,2\n")
+
+    monkeypatch.setattr(bot, "api", api)
+    monkeypatch.setattr(bot.http, "get", get)
+    path = asyncio.run(bot.download(
+        {"file_name": "sales_data.csv", "file_id": "1", "file_size": 8}))
+    # Имя файла попадает в шапку отчёта, поэтому отметки времени в нём нет.
+    assert path.name == "sales_data.csv"
+    assert path.parent.parent == tmp_path
+    assert path.read_bytes() == b"a,b\n1,2\n"

@@ -40,6 +40,9 @@ class Analysis:
     described: bool = False
     clean_id: str | None = None
     cleaning_log: list[str] = field(default_factory=list)
+    # Сколько чего сделала очистка: из этих чисел складывается строка
+    # в коротком ответе для чата. None: очистка не выполнялась.
+    cleaning_counts: dict[str, int] | None = None
     charts: list[Chart] = field(default_factory=list)
     findings: dict[str, Any] | None = None
     report_path: Path | None = None
