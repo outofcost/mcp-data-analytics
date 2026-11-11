@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>MCP-сервер для анализа таблиц</title>
+<meta name="description" content="MCP-сервер загружает CSV или Excel, чистит данные, строит графики и собирает отчёт в PDF.">
+<style>
+:root {
+  --bg: #FFFFFF;
+  --surface: #F2F8F4;
+  --text: #1A1A1A;
+  --muted: #75767D;
+  --line: #E3E3E8;
+  --accent: #055A31;
+  --on-accent: #FFFFFF;
+  --mark: #2DBE64;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111512;
+    --surface: #1A211C;
+    --text: #ECEEEC;
+    --muted: #A3A6AB;
+    --line: #2E3731;
+    --accent: #2DBE64;
+    --on-accent: #111512;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Arial,
+    sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+main { max-width: 900px; margin: 0 auto; padding: 36px 20px 44px; }
+h1 { margin: 0 0 12px; font-size: 30px; line-height: 1.2; }
+h1::before {
+  content: "";
+  display: block;
+  width: 44px;
+  height: 5px;
+  margin-bottom: 18px;
+  border-radius: 3px;
+  background: var(--mark);
+}
+h2 { margin: 30px 0 10px; font-size: 19px; line-height: 1.3; }
+p, ol { max-width: 700px; }
+p { margin: 0 0 10px; }
+.lead { font-size: 18px; }
+.note { color: var(--muted); font-size: 15px; }
+a { color: var(--accent); text-underline-offset: 3px; }
+code, pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+}
+.box {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.box.short { align-items: center; }
+.box code, .box pre {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+button {
+  flex: none;
+  min-width: 124px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--mark);
+  outline-offset: 2px;
+}
+ol { margin: 0 0 10px; padding-left: 22px; }
+ol li { margin-bottom: 6px; }
+.tools {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0 28px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.tools li { padding: 10px 0; border-top: 1px solid var(--line); }
+.tools code { color: var(--accent); font-weight: 600; }
+.tools span { display: block; font-size: 15px; }
+.tools p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+footer {
+  margin-top: 30px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+footer p { max-width: none; }
+@media (max-width: 860px) {
+  .tools { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 600px) {
+  main { padding: 28px 16px 40px; }
+  h1 { font-size: 25px; }
+  .lead { font-size: 17px; }
+  .box, .box.short { flex-direction: column; align-items: flex-start; }
+  .box code, .box pre { flex: none; width: 100%; padding: 0; }
+  .tools { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<main>
+<h1>MCP-сервер для анализа таблиц</h1>
+<p class="lead">Сервер по протоколу MCP загружает таблицу CSV или Excel, чистит данные и строит графики.</p>
+<p class="lead">Подключите его к своему ИИ-помощнику: в ответ на запрос в чате придут графики, выводы с рекомендациями и отчёт в PDF.</p>
+
+<h2>Подключите сервер по адресу</h2>
+<div class="box short">
+<code id="server-url">https://affluent-grant-finalize.ngrok-free.dev/mcp</code>
+<button type="button" data-copy="server-url">Скопировать</button>
+</div>
+
+<h2>Отправьте помощнику готовый запрос</h2>
+<div class="box">
+<pre id="prompt">Подключись к MCP-серверу для анализа таблиц по адресу https://affluent-grant-finalize.ngrok-free.dev/mcp.
+Если сам подключиться не можешь, объясни по шагам, где вписать этот адрес в настройках.
+Потом через этот сервер выполни запрос: «Проанализируй продажи из файла sales_data.csv, построй графики и дай рекомендации». Файл лежит на сервере, прикладывать его не нужно.</pre>
+<button type="button" data-copy="prompt">Скопировать</button>
+</div>
+
+<h2>Как подключить в Claude</h2>
+<ol>
+<li>В claude.ai откройте Settings, затем Connectors и нажмите Add custom connector.</li>
+<li>Вставьте адрес сервера и выберите вход «No sign in».</li>
+<li>В новом чате напишите: «Проанализируй продажи из файла sales_data.csv, построй графики и дай рекомендации». Файл прикладывать не нужно: он лежит на сервере.</li>
+</ol>
+<p class="note">Claude Desktop, консольный клиент через API и свой Telegram-бот подключаются локально: команды и конфиг лежат <a href="https://github.com/outofcost/mcp-data-analytics#как-подключить-к-клиенту">в README</a>.</p>
+
+<h2>Попробуйте без установки</h2>
+<p>Напишите в Telegram боту <a href="https://t.me/test_vkusvillmcpKK_bot">@test_vkusvillmcpKK_bot</a>. Пришлите ему CSV или Excel, запрос напишите в подписи к файлу. Примерно через минуту придут альбом графиков, текст выводов и отчёт в PDF.</p>
+
+<h2>Какие инструменты видит модель</h2>
+<p>Порядок этапов задаёт сервер: каждый ответ инструмента называет следующий шаг.</p>
+<ul class="tools">
+<li><code>list_data_files</code><span>Файлы с данными на сервере</span><p>Показывает файлы с данными (CSV, Excel) в папке data/ сервера.</p></li>
+<li><code>load_data</code><span>Загрузить данные из CSV или Excel</span><p>Загружает таблицу из файла CSV или Excel.</p></li>
+<li><code>describe_data</code><span>Базовая статистика</span><p>Считает базовую статистику по таблице.</p></li>
+<li><code>clean_data</code><span>Очистить данные</span><p>Чистит таблицу и сообщает, что именно сделано, с числами.</p></li>
+<li><code>suggest_charts</code><span>Подобрать графики</span><p>Подбирает графики по типам колонок и возвращает готовые вызовы.</p></li>
+<li><code>plot_trend</code><span>График тренда</span><p>Строит график тренда: сумма показателя по периодам времени.</p></li>
+<li><code>plot_distribution</code><span>График распределения</span><p>Строит распределение: гистограмму числа или столбцы по категории.</p></li>
+<li><code>correlation_analysis</code><span>Матрица корреляций</span><p>Строит матрицу корреляций числовых колонок (тепловая карта).</p></li>
+<li><code>abc_analysis</code><span>ABC-анализ</span><p>Делит значения колонки на группы A, B, C по вкладу в сумму.</p></li>
+<li><code>collect_findings</code><span>Цифры для выводов</span><p>Считает цифры, на которых строятся выводы и рекомендации.</p></li>
+<li><code>save_report</code><span>Сохранить отчёт</span><p>Собирает отчёт и сохраняет его в двух видах: Markdown и PDF.</p></li>
+</ul>
+
+<h2>Что стоит знать заранее</h2>
+<p>У адреса нет входа: это демо-режим для показа. Память сервера общая для всех, кто подключился, а бот отправляет файл и запрос провайдеру языковой модели. Закрытые данные присылать не стоит.</p>
+
+<footer>
+<p>Код, README и примеры отчётов лежат в репозитории <a href="https://github.com/outofcost/mcp-data-analytics">github.com/outofcost/mcp-data-analytics</a>.</p>
+<p class="note">Страницу собирает scripts/build_landing.py из docs/tools-schema.json.</p>
+</footer>
+</main>
+<script>
+function copyByCommand(text) {
+  var area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.select();
+  var done = document.execCommand("copy");
+  document.body.removeChild(area);
+  return done ? Promise.resolve() : Promise.reject();
+}
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text).catch(function () {
+      return copyByCommand(text);
+    });
+  }
+  return copyByCommand(text);
+}
+document.querySelectorAll("button[data-copy]").forEach(function (button) {
+  var label = button.textContent;
+  button.addEventListener("click", function () {
+    var text = document.getElementById(button.dataset.copy).textContent;
+    copyText(text).then(function () {
+      button.textContent = "Скопировано";
+    }, function () {
+      button.textContent = "Не получилось";
+    }).then(function () {
+      setTimeout(function () { button.textContent = label; }, 1600);
+    });
+  });
+});
+</script>
+</body>
+</html>
