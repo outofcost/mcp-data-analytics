@@ -2,9 +2,11 @@
 
 import csv
 import io
+import re
 from pathlib import Path
 from collections.abc import Callable
 from typing import Annotated, Any
+from zipfile import BadZipFile
 
 import pandas as pd
 from mcp.server.mcpserver.exceptions import ToolError
@@ -22,6 +24,11 @@ MAX_FILE_BYTES = 30 * 1024 * 1024
 MAX_TEXT_CHARS = 300_000
 # В первых строках файла ищем строку заголовка.
 HEADER_SEARCH_ROWS = 20
+# Строка итогов: первая заполненная ячейка начинается со слов «Итого» или
+# «Всего» либо целиком равна «Total». Английское слово берём только целиком:
+# с него может начинаться название товара.
+TOTAL_ROW = re.compile(
+    r"(общий итог|итого|всего)\b|(grand )?total[\s:]*$", re.IGNORECASE)
 
 
 def format_value(value: object) -> str:
@@ -60,14 +67,18 @@ def read_csv_text(text: str) -> tuple[pd.DataFrame, str]:
 def split_header(raw: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     """Находит строку заголовка и отделяет её от данных.
 
-    В выгрузках из учётных систем над таблицей часто стоит название отчёта.
-    Заголовком считается первая строка, в которой заполнено большинство
-    колонок.
+    В выгрузках из учётных систем над таблицей часто стоит название отчёта
+    и реквизиты, а под ней строка «Итого». Заголовком считается первая
+    строка, в которой заполнено большинство колонок. Строки итогов
+    в таблицу не попадают: иначе сумма по колонке удвоится.
     """
-    filled = raw.apply(lambda column: col.as_text(column).notna())
+    text = raw.apply(col.as_text)
+    filled = text.notna()
     counts = filled.sum(axis=1)
     head = counts.iloc[:HEADER_SEARCH_ROWS]
-    need = min(max(2, int(0.6 * head.max())), raw.shape[1])
+    # Больше половины от самой заполненной строки: строка реквизитов
+    # с двумя ячейками над таблицей из четырёх колонок сюда не подходит.
+    need = head.max() // 2 + 1
     candidates = head[head >= need]
     if candidates.empty:
         raise ToolError("В файле не нашлось строки заголовка: первые строки "
@@ -88,12 +99,21 @@ def split_header(raw: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
 
     data = raw.iloc[header_position + 1:].copy()
     data.columns = names
-    has_values = filled.iloc[header_position + 1:].to_numpy()
-    empty_rows = int((~has_values.any(axis=1)).sum())
+    below = text.iloc[header_position + 1:]
+    has_values = below.notna().any(axis=1)
+    empty_rows = int((~has_values).sum())
     if empty_rows:
         notes.append(f"пропустил пустые строки: {empty_rows}")
-    data = data[has_values.any(axis=1)].reset_index(drop=True)
-    return data, notes
+    first_cell = below.iloc[:, 0]
+    for position in range(1, below.shape[1]):
+        first_cell = first_cell.fillna(below.iloc[:, position])
+    is_total = first_cell.str.match(TOTAL_ROW, na=False)
+    if is_total.any():
+        notes.append("убрал строки итогов (первая заполненная ячейка "
+                     "начинается с «Итого», «Всего» или «Total»): "
+                     f"{int(is_total.sum())}")
+    keep = (has_values & ~is_total).to_numpy()
+    return data[keep].reset_index(drop=True), notes
 
 
 @register_skill
@@ -104,6 +124,14 @@ class DataLoadingSkill(Skill):
     title = "Загрузка"
     guide = ("Читает файл, определяет типы колонок, считает пропуски и "
              "дубликаты.")
+    rules = (
+        "Таблица адресуется по dataset_id из ответа load_data.",
+        "Если пользователь назвал файл по имени, сначала вызови load_data "
+        "с этим именем: файлы лежат в папке data/ сервера, прикреплять их "
+        "к чату не нужно. list_data_files покажет, какие файлы есть.",
+        "Если пользователь прикрепил таблицу к чату и файла на сервере "
+        "нет, передай её текст в аргументе csv_text инструмента load_data.",
+    )
 
     def is_done(self, analysis: Analysis) -> bool:
         """Этап выполнен, когда по таблице получена статистика."""
@@ -204,7 +232,15 @@ class DataLoadingSkill(Skill):
             shown = {"\t": "табуляция"}.get(delimiter, f"«{delimiter}»")
             return raw, [f"разделитель {shown}, кодировка {encoding}"]
 
-        book = pd.ExcelFile(path)
+        try:
+            book = pd.ExcelFile(path)
+        except (ValueError, BadZipFile) as error:
+            raise ToolError(
+                f"Файл «{path.name}» не читается как Excel: расширение "
+                f"{path.suffix}, но внутри не книга Excel или файл "
+                "повреждён. Откройте его в Excel и сохраните заново как "
+                ".xlsx или как CSV, потом загрузите снова."
+            ) from error
         if sheet and sheet not in book.sheet_names:
             raise ToolError(f"Листа «{sheet}» в файле нет. Есть листы: "
                             f"{', '.join(book.sheet_names)}.")
@@ -263,7 +299,7 @@ class DataLoadingSkill(Skill):
             )
 
         data, header_notes = split_header(raw)
-        frame, roles, type_notes = col.infer_frame(data)
+        frame, roles, type_notes, date_questions = col.infer_frame(data)
         notes += header_notes + type_notes
         if frame.empty:
             raise ToolError("В таблице есть заголовок, но нет строк с "
@@ -290,7 +326,7 @@ class DataLoadingSkill(Skill):
             duplicates=int(frame.duplicated().sum()),
             missing_total=int(frame.isna().sum().sum()),
             notes=notes,
-            questions=self._questions(roles),
+            questions=self._questions(roles) + date_questions,
             preview=[{name: format_value(value)
                       for name, value in row.items()}
                      for row in frame.head(3).to_dict("records")],

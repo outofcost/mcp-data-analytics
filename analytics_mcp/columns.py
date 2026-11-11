@@ -1,13 +1,14 @@
 """Определение типов колонок.
 
 Сервер должен справиться с незнакомым файлом, поэтому тип колонки
-определяется по её значениям, без опоры на имена. Каждой колонке
-назначается роль:
+определяется по её значениям. Имя колонки учитывается в одном случае:
+оно отличает код (год, почтовый индекс, номер заказа) от показателя.
+Каждой колонке назначается роль:
 
 * ``date``: дата;
 * ``number``: число, по которому можно считать суммы и средние;
 * ``category``: текст с небольшим числом повторяющихся значений;
-* ``id``: идентификатор строки, в расчётах не участвует;
+* ``id``: идентификатор строки или код, в расчётах не участвует;
 * ``text``: прочий текст;
 * ``empty``: колонка без значений.
 """
@@ -32,10 +33,20 @@ MAX_CATEGORIES = 20
 
 EMPTY_MARKS = {"", "-", "—", "н/д", "нд", "нет данных", "n/a", "na", "nan",
                "null", "none", "nat"}
-DATE_FORMATS = ("%d.%m.%Y", "%d.%m.%y", "%d/%m/%Y", "%d-%m-%Y",
+DATE_FORMATS = ("%d.%m.%Y", "%d.%m.%y", "%d-%m-%Y",
                 "%d.%m.%Y %H:%M", "%d.%m.%Y %H:%M:%S")
-ID_NAME = re.compile(r"(^|[\s_])(id|код|номер|артикул)($|[\s_])|№",
-                     re.IGNORECASE)
+# Дату через косую черту читают двумя способами: в России первым стоит
+# день, в США месяц («11/8/2016» там 8 ноября). Порядок выбирает read_dates.
+DAY_FIRST = "%d/%m/%Y"
+MONTH_FIRST = "%m/%d/%Y"
+ORDER_NAMES = {DAY_FIRST: "день/месяц/год", MONTH_FIRST: "месяц/день/год"}
+ID_NAME = re.compile(
+    r"(^|[\s_])(id|code|index|код|индекс|номер|артикул)($|[\s_])"
+    r"|zip|postal|№", re.IGNORECASE)
+YEAR_NAME = re.compile(r"(^|[\s_])(year|год)($|[\s_])", re.IGNORECASE)
+# Значения колонки «Год» лежат в этих границах. У показателя с таким словом
+# в имени («Продажи за год») значения другие.
+YEAR_RANGE = (1900, 2100)
 # Слова в имени колонки, по которым выбирается главный показатель.
 MEASURE_WORDS = ("sales", "revenue", "amount", "выруч", "продаж", "сумм",
                  "оборот")
@@ -66,10 +77,16 @@ def to_number(text: pd.Series) -> pd.Series:
     return pd.to_numeric(cleaned, errors="coerce").astype("float64")
 
 
-def to_date(text: pd.Series) -> pd.Series:
-    """Читает даты: сначала формат ISO, потом русские «день.месяц.год»."""
+def to_date(text: pd.Series, slash_format: str = DAY_FIRST) -> pd.Series:
+    """Читает даты: сначала формат ISO, потом русские «день.месяц.год».
+
+    Args:
+        text: значения колонки текстом.
+        slash_format: как читать запись через косую черту: DAY_FIRST
+            или MONTH_FIRST.
+    """
     result = pd.to_datetime(text, format="ISO8601", errors="coerce")
-    for date_format in DATE_FORMATS:
+    for date_format in DATE_FORMATS + (slash_format,):
         missing = result.isna() & text.notna()
         if not missing.any():
             break
@@ -77,6 +94,61 @@ def to_date(text: pd.Series) -> pd.Series:
                                               format=date_format,
                                               errors="coerce"))
     return result
+
+
+def read_dates(name: str, text: pd.Series) -> tuple[pd.Series, str, str]:
+    """Читает даты и выбирает порядок дня и месяца в записи «1/2/2024».
+
+    Колонка читается целиком в одном порядке: в том, который подошёл
+    большему числу значений. Если оба порядка подошли одинаково (все дни
+    не больше 12), остаётся «день/месяц/год», и выбор подтверждает
+    пользователь.
+
+    Returns:
+        Даты, пометка о выбранном порядке и вопрос пользователю. Пометка
+        пустая, когда оба порядка дали одни и те же даты. Вопрос пустой,
+        когда порядок определился по значениям.
+    """
+    day_first = to_date(text)
+    month_first = to_date(text, MONTH_FIRST)
+    if day_first.equals(month_first):
+        return day_first, "", ""
+    counts = {DAY_FIRST: int(day_first.notna().sum()),
+              MONTH_FIRST: int(month_first.notna().sum())}
+    if counts[MONTH_FIRST] > counts[DAY_FIRST]:
+        dates, chosen, other = month_first, MONTH_FIRST, DAY_FIRST
+    else:
+        dates, chosen, other = day_first, DAY_FIRST, MONTH_FIRST
+    note = (f"даты в колонке «{name}» прочитал в порядке "
+            f"{ORDER_NAMES[chosen]}: порядок {ORDER_NAMES[other]} подходит "
+            f"для {counts[other]} значений из {int(text.notna().sum())}")
+    if counts[chosen] > counts[other]:
+        return dates, note, ""
+    example = (day_first != month_first) & day_first.notna()
+    question = (
+        f"Даты в колонке «{name}» читаются двумя способами: "
+        f"{ORDER_NAMES[DAY_FIRST]} и {ORDER_NAMES[MONTH_FIRST]}. Выбрал "
+        f"{ORDER_NAMES[DAY_FIRST]}: «{text[example].iloc[0]}» прочитано как "
+        f"{dates[example].iloc[0].date()}, период получился с "
+        f"{dates.min().date()} по {dates.max().date()}. Спросите "
+        "пользователя, какой порядок верный. Если первым стоит месяц, даты "
+        "в файле нужно записать в виде ГГГГ-ММ-ДД и загрузить файл заново.")
+    return dates, note, question
+
+
+def is_code(name: str, numbers: pd.Series) -> bool:
+    """Узнаёт по имени колонку-код: год, почтовый индекс, номер заказа.
+
+    Сумма и среднее по кодам смысла не имеют, поэтому числом такая колонка
+    не считается. Код состоит из целых чисел, а год ещё и лежит в границах
+    YEAR_RANGE.
+    """
+    values = numbers.dropna()
+    if not (values % 1 == 0).all():
+        return False
+    if YEAR_NAME.search(name):
+        return bool(values.between(*YEAR_RANGE).all())
+    return bool(ID_NAME.search(name))
 
 
 def reading_note(name: str, series: pd.Series, parsed: pd.Series,
@@ -95,50 +167,63 @@ def reading_note(name: str, series: pd.Series, parsed: pd.Series,
     return "; ".join(notes)
 
 
-def infer_column(name: str, series: pd.Series) -> tuple[pd.Series, str, str]:
+def infer_column(name: str,
+                 series: pd.Series) -> tuple[pd.Series, str, str, str]:
     """Определяет роль колонки и приводит значения к нужному типу.
 
     Returns:
-        Колонка с приведёнными значениями, её роль и пометка о том, что
-        пришлось сделать при чтении (пустая строка, если ничего).
+        Колонка с приведёнными значениями, её роль, пометка о том, что
+        пришлось сделать при чтении, и вопрос пользователю. Пометка и
+        вопрос пустые, если сказать нечего.
     """
     text = as_text(series)
     filled = text.dropna()
     if filled.empty:
-        return text, EMPTY, ""
+        return text, EMPTY, "", ""
 
     numbers = to_number(text)
-    if numbers.notna().sum() >= MIN_SHARE * len(filled):
+    is_number = numbers.notna().sum() >= MIN_SHARE * len(filled)
+    if is_number and not is_code(name, numbers):
         note = reading_note(name, series, numbers, "числа")
-        if (ID_NAME.search(name) and numbers.dropna().is_unique
-                and len(filled) > 1):
-            return numbers, ID, note
-        return numbers, NUMBER, note
+        return numbers, NUMBER, note, ""
 
-    dates = to_date(text)
-    if dates.notna().sum() >= MIN_SHARE * len(filled):
-        return dates, DATE, reading_note(name, series, dates, "даты")
+    # Код остаётся текстом и получает роль по общим правилам ниже. Даты
+    # в нём не ищем: «2023» читается как 1 января 2023 года.
+    if not is_number:
+        dates, order_note, question = read_dates(name, text)
+        if dates.notna().sum() >= MIN_SHARE * len(filled):
+            lost_note = reading_note(name, series, dates, "даты")
+            note = "; ".join(filter(None, [order_note, lost_note]))
+            return dates, DATE, note, question
 
     unique = filled.nunique()
     if ID_NAME.search(name) and unique == len(filled):
-        return text, ID, ""
+        return text, ID, "", ""
     # Почти пустая колонка (например, редкие комментарии) это не категория.
     if len(filled) < 0.1 * len(series):
-        return text, TEXT, ""
+        return text, TEXT, "", ""
     if unique <= MAX_CATEGORIES and unique <= max(2, len(filled) // 2):
-        return text, CATEGORY, ""
-    return text, TEXT, ""
+        return text, CATEGORY, "", ""
+    return text, TEXT, "", ""
 
 
 def infer_frame(raw: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str],
-                                            list[str]]:
-    """Определяет роли всех колонок таблицы."""
-    columns, roles, notes = {}, {}, []
+                                            list[str], list[str]]:
+    """Определяет роли всех колонок таблицы.
+
+    Returns:
+        Таблица с приведёнными значениями, роли колонок, пометки о чтении
+        и вопросы пользователю.
+    """
+    columns, roles, notes, questions = {}, {}, [], []
     for name in raw.columns:
-        columns[name], roles[name], note = infer_column(name, raw[name])
+        columns[name], roles[name], note, question = infer_column(
+            name, raw[name])
         if note:
             notes.append(note)
-    return pd.DataFrame(columns, index=raw.index), roles, notes
+        if question:
+            questions.append(question)
+    return pd.DataFrame(columns, index=raw.index), roles, notes, questions
 
 
 def columns_with_role(roles: dict[str, str], role: str) -> list[str]:
