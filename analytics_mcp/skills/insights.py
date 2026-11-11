@@ -287,9 +287,29 @@ class InsightGenerationSkill(Skill):
         collect_findings. PDF это один файл с графиками внутри, его удобно
         открыть или переслать. Возвращает готовый короткий ответ для
         пользователя (chat_summary), пути к файлам, ссылку на PDF (если
-        сервер работает по HTTP) и список того, чего отчёту не хватает.
+        сервер работает по HTTP). Пока не пройдены очистка, графики
+        и collect_findings, отчёт не собирается: приходит ошибка
+        с названием следующего шага.
         """
         dataset = self.store.current(dataset_id)
+        analysis = dataset.analysis
+        # Отчёт собирается только после обязательных этапов. Иначе модель
+        # могла сохранить «анализ» сразу после загрузки: без очистки,
+        # графиков и цифр, с одним предупреждением в ответе.
+        missing = [
+            f"Этап «{skill.title}» не завершён. {skill.hint(analysis)}"
+            for skill in self.workflow.skills
+            if skill is not self and not skill.is_done(analysis)]
+        if analysis.findings is None:
+            missing.append(
+                "Цифры для выводов не собраны. Вызовите collect_findings("
+                f"dataset_id=\"{analysis.current_id}\").")
+        if missing:
+            raise ToolError(
+                "Отчёт пока собрать нельзя: анализ не доведён до конца. "
+                "Сделайте первый шаг из списка и следуйте полю next_step, "
+                "потом вызовите save_report снова:\n"
+                + "\n".join(f"- {text}" for text in missing))
         found = [(rep.phrase(item.headline), item.evidence.strip())
                  for item in conclusions]
         advice = [(rep.phrase(item.action), item.reason.strip())
@@ -306,16 +326,6 @@ class InsightGenerationSkill(Skill):
             raise ToolError(
                 "save_report не принял аргументы. Исправьте и вызовите "
                 "снова:\n" + "\n".join(f"- {text}" for text in problems))
-        analysis = dataset.analysis
-
-        # Предупреждения: какие этапы до этого не доведены до конца.
-        warnings = [
-            f"Этап «{skill.title}» не завершён. {skill.hint(analysis)}"
-            for skill in self.workflow.skills
-            if skill is not self and not skill.is_done(analysis)]
-        if analysis.findings is None:
-            warnings.append("collect_findings не вызывался: раздела "
-                            "с цифрами в отчёте нет.")
 
         frame, excluded = dataset.working_frame()
         names = list(dataset.roles)
@@ -388,6 +398,5 @@ class InsightGenerationSkill(Skill):
             report_url=report_url,
             charts=len(analysis.charts),
             pages=pages,
-            warnings=warnings,
             next_step=self.next_step(dataset),
         )

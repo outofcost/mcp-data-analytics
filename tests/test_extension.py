@@ -69,7 +69,7 @@ def test_abc_skill_added_as_one_file(tmp_path):
 
 
 def test_abc_works_on_a_column_with_many_values(tmp_path):
-    """ABC считается по колонке с сотней товаров, у которой роль «текст»."""
+    """ABC считается по колонке с 40 товарами, у которой роль «текст»."""
     products = [f"Товар {n}" for n in range(1, 41)]
     frame = pd.DataFrame({
         "Product Name": products * 3,

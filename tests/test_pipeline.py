@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from helpers import (CONCLUSIONS, PNG_SIGNATURE, RECOMMENDATIONS, Session,
-                     run)
+                     analyse, run)
 
 ASSIGNMENT_TOOLS = {"load_data", "describe_data", "plot_trend",
                     "plot_distribution", "correlation_analysis"}
@@ -98,7 +98,6 @@ def test_full_chain_on_sales_data(tmp_path):
             conclusions=CONCLUSIONS,
             recommendations=RECOMMENDATIONS)).data
         assert report["charts"] == 3
-        assert report["warnings"] == []
         text = (tmp_path / "output" / raw_id / "report.md").read_text(
             encoding="utf-8")
         assert text.count("![") == 3
@@ -118,11 +117,10 @@ def test_full_chain_on_sales_data(tmp_path):
 def test_report_link_in_http_mode(tmp_path):
     """По HTTP save_report возвращает ссылку на PDF со случайным ключом."""
     async def scenario(session: Session) -> None:
-        raw_id = (await session.call(
-            "load_data", file_path="sales_data.csv")).data["dataset_id"]
+        clean_id = await analyse(session)
         urls = [
             (await session.call(
-                "save_report", dataset_id=raw_id, title="Отчёт",
+                "save_report", dataset_id=clean_id, title="Отчёт",
                 conclusions=CONCLUSIONS, recommendations=RECOMMENDATIONS,
             )).data["report_url"]
             for _ in range(2)]

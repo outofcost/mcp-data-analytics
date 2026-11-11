@@ -2,7 +2,7 @@
 
 import re
 
-from helpers import CONCLUSIONS, RECOMMENDATIONS, Session, run
+from helpers import CONCLUSIONS, RECOMMENDATIONS, Session, analyse, run
 
 from analytics_mcp.report import tidy, word_count
 from analytics_mcp.report_pdf import ReportPdf
@@ -31,8 +31,7 @@ def test_schema_tells_the_model_the_shape_of_a_conclusion(tmp_path):
 def test_wrong_shape_is_rejected_with_every_violation_listed(tmp_path):
     """Все нарушения приходят одной ошибкой по-русски, с номером пункта."""
     async def scenario(session: Session) -> None:
-        dataset_id = (await session.call(
-            "load_data", file_path="sales_data.csv")).data["dataset_id"]
+        dataset_id = await analyse(session)
         long_headline = ("Продажи готовых обедов растут быстрее остальных "
                          "товаров, но приносят убыток компании")
         conclusions = [
@@ -86,6 +85,7 @@ def test_report_sections_go_in_the_same_order_in_markdown_and_pdf(
     async def scenario(session: Session) -> None:
         raw_id = (await session.call(
             "load_data", file_path="sales_data.csv")).data["dataset_id"]
+        await session.call("describe_data", dataset_id=raw_id)
         clean_id = (await session.call(
             "clean_data", dataset_id=raw_id)).data["dataset_id"]
         suggested = (await session.call(
@@ -180,16 +180,15 @@ def test_chat_summary_is_built_by_the_server(tmp_path):
 def test_chat_summary_ends_with_the_link_in_http_mode(tmp_path):
     """По HTTP в ответе для чата стоит ссылка на отчёт, пути к файлу нет."""
     async def scenario(session: Session) -> None:
-        raw_id = (await session.call(
-            "load_data", file_path="sales_data.csv")).data["dataset_id"]
+        clean_id = await analyse(session)
         report = (await session.call(
-            "save_report", dataset_id=raw_id, title="Отчёт",
+            "save_report", dataset_id=clean_id, title="Отчёт",
             conclusions=CONCLUSIONS, recommendations=RECOMMENDATIONS)).data
         last = report["chat_summary"].splitlines()[-1]
-        assert last == (f"Полный отчёт: {report['report_url']}, 1 страница, "
-                        "0 графиков.")
-        # Без очистки и без collect_findings ответ это говорит прямо.
-        assert "Очистка не выполнялась." in report["chat_summary"]
+        assert last.startswith(f"Полный отчёт: {report['report_url']}, ")
+        assert last.endswith("3 графика.")
+        # Пути к файлу на диске сервера в ответе для чата нет.
+        assert report["pdf_path"] not in report["chat_summary"]
 
     run(tmp_path, scenario, public_url="https://example.test")
 

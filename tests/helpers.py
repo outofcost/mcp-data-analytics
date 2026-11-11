@@ -66,6 +66,25 @@ class Session:
                      result.structured_content)
 
 
+async def analyse(session: Session, file_path: str = "sales_data.csv") -> str:
+    """Проходит этапы до отчёта и возвращает dataset_id очищенной таблицы.
+
+    Загрузка, статистика, очистка, три предложенных графика и цифры для
+    выводов: после этого save_report готов собрать отчёт.
+    """
+    raw_id = (await session.call(
+        "load_data", file_path=file_path)).data["dataset_id"]
+    await session.call("describe_data", dataset_id=raw_id)
+    clean_id = (await session.call(
+        "clean_data", dataset_id=raw_id)).data["dataset_id"]
+    suggested = (await session.call(
+        "suggest_charts", dataset_id=clean_id)).data["suggestions"]
+    for suggestion in suggested[:3]:
+        await session.call(suggestion["tool"], **suggestion["arguments"])
+    await session.call("collect_findings", dataset_id=clean_id)
+    return clean_id
+
+
 def run(tmp_path: Path, scenario: Callable[[Session], Awaitable[None]],
         restrict: bool = False, public_url: str = "") -> None:
     """Запускает сценарий теста на сервере с папкой вывода в tmp_path.

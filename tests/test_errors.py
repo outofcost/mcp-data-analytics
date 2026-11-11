@@ -1,6 +1,6 @@
 """Ошибки приходят ошибками и говорят, что исправить."""
 
-from helpers import CONCLUSIONS, RECOMMENDATIONS, Session, run
+from helpers import CONCLUSIONS, RECOMMENDATIONS, Session, analyse, run
 
 
 def test_unknown_dataset_points_to_load_data(tmp_path):
@@ -64,23 +64,60 @@ def test_correlation_needs_two_numeric_columns(tmp_path):
     run(tmp_path, scenario)
 
 
-def test_report_needs_conclusions_and_warns_about_skipped_stages(tmp_path):
-    """Пустые выводы отклоняются, пропущенные этапы видны в ответе."""
+def test_report_is_refused_until_the_analysis_is_done(tmp_path):
+    """Отчёт сразу после загрузки не собирается: ошибка называет шаги."""
     async def scenario(session: Session) -> None:
-        dataset_id = (await session.call(
+        raw_id = (await session.call(
             "load_data", file_path="sales_data.csv")).data["dataset_id"]
-        reply = await session.call("save_report", dataset_id=dataset_id,
+        reply = await session.call("save_report", dataset_id=raw_id,
+                                   title="Отчёт", conclusions=CONCLUSIONS,
+                                   recommendations=RECOMMENDATIONS)
+        assert reply.is_error
+        # Ошибка перечисляет незавершённые этапы и называет вызовы.
+        for word in ("describe_data", "Очистка", "Графики",
+                     "collect_findings"):
+            assert word in reply.text, word
+        assert not (tmp_path / "output" / raw_id / "report.pdf").exists()
+
+        # После всех этапов тот же вызов проходит.
+        clean_id = await analyse(session)
+        reply = await session.call("save_report", dataset_id=clean_id,
+                                   title="Отчёт", conclusions=CONCLUSIONS,
+                                   recommendations=RECOMMENDATIONS)
+        assert not reply.is_error
+
+        # Пустые выводы отклоняются и после полной цепочки.
+        reply = await session.call("save_report", dataset_id=clean_id,
                                    title="Отчёт", conclusions=[],
                                    recommendations=RECOMMENDATIONS)
         assert reply.is_error
         assert "conclusions" in reply.text
 
-        reply = await session.call("save_report", dataset_id=dataset_id,
+    run(tmp_path, scenario)
+
+
+def test_report_works_when_fewer_than_three_charts_are_possible(tmp_path):
+    """Таблица из одной числовой колонки: отчёт собирается с одним графиком."""
+    path = tmp_path / "one_column.csv"
+    path.write_text("amount\n" + "\n".join(str(n) for n in range(10, 40)),
+                    encoding="utf-8")
+
+    async def scenario(session: Session) -> None:
+        raw_id = (await session.call(
+            "load_data", file_path=str(path))).data["dataset_id"]
+        await session.call("describe_data", dataset_id=raw_id)
+        clean_id = (await session.call(
+            "clean_data", dataset_id=raw_id)).data["dataset_id"]
+        suggested = (await session.call(
+            "suggest_charts", dataset_id=clean_id)).data["suggestions"]
+        assert len(suggested) == 1
+        await session.call(suggested[0]["tool"], **suggested[0]["arguments"])
+        await session.call("collect_findings", dataset_id=clean_id)
+        reply = await session.call("save_report", dataset_id=clean_id,
                                    title="Отчёт", conclusions=CONCLUSIONS,
                                    recommendations=RECOMMENDATIONS)
-        assert not reply.is_error
-        warnings = " ".join(reply.data["warnings"])
-        assert "Очистка" in warnings and "Графики" in warnings
+        assert not reply.is_error, reply.text
+        assert reply.data["charts"] == 1
 
     run(tmp_path, scenario)
 
