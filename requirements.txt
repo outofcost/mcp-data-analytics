@@ -1,0 +1,7 @@
+# Сервер
+mcp>=2.3,<3
+pandas>=3.0,<4
+matplotlib>=3.8
+openpyxl>=3.1
+# Клиенты (консольный и Telegram-бот)
+httpx2>=2.10
