@@ -233,8 +233,6 @@ $tools
 <footer>
 <p>Код, README и примеры отчётов лежат в репозитории \
 <a href="$repo_url">$repo_name</a>.</p>
-<p class="note">Страницу собирает scripts/build_landing.py \
-из docs/tools-schema.json.</p>
 </footer>
 </main>
 <script>
