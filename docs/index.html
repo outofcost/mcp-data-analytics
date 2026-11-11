@@ -49,7 +49,7 @@ h1::before {
   background: var(--mark);
 }
 h2 { margin: 30px 0 10px; font-size: 19px; line-height: 1.3; }
-p, ol { max-width: 700px; }
+p, ul.clients { max-width: 700px; }
 p { margin: 0 0 10px; }
 .lead { font-size: 18px; }
 .note { color: var(--muted); font-size: 15px; }
@@ -95,6 +95,10 @@ button:focus-visible, a:focus-visible {
 }
 .clients { margin: 0 0 10px; padding-left: 22px; }
 .clients li { margin-bottom: 6px; }
+h3 { margin: 20px 0 8px; font-size: 16px; line-height: 1.3; }
+details { margin: 0 0 10px; }
+summary { color: var(--accent); cursor: pointer; }
+details p { margin-top: 8px; }
 .tools {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -140,13 +144,18 @@ footer p { max-width: none; }
 </div>
 
 <h2>Добавьте сервер в настройках до начала чата</h2>
-<p>Из уже идущего чата помощник сервер себе не добавит.</p>
+<p>Если у помощника есть внешние коннекторы, сервер добавляется руками через интерфейс. Откройте настройки, найдите раздел с коннекторами или MCP-серверами, вставьте адрес и выберите вход без авторизации. Назовите сервер analytics.</p>
 <ul class="clients">
-<li>В Claude откройте Settings, затем Connectors и нажмите Add custom connector. Назовите сервер analytics, вставьте адрес и выберите вход «No sign in».</li>
-<li>В Cursor на компьютере вставьте блок ниже в файл <code>~/.cursor/mcp.json</code>. Если сервер не появился в списке, перезапустите Cursor.</li>
-<li>Для облачного агента Cursor добавьте сервер в списке MCP на cursor.com/agents, тип HTTP, и запустите нового агента.</li>
-<li>В ChatGPT добавьте в настройках свой MCP-сервер по этому адресу, без аутентификации.</li>
+<li>В Claude это Settings, затем Connectors и кнопка Add custom connector, вход «No sign in».</li>
+<li>У облачного агента Cursor это список MCP на cursor.com/agents, тип HTTP.</li>
+<li>В ChatGPT это свой MCP-сервер в настройках, без аутентификации.</li>
 </ul>
+<p class="note">Из уже идущего чата помощник сервер себе не добавит. Путь для Claude я прошёл на этом сервере, путь для Cursor сверил с его документацией, путь для ChatGPT не проверял.</p>
+
+<h3>Остальные случаи</h3>
+<details>
+<summary>Cursor на компьютере читает серверы из файла настроек</summary>
+<p>Вставьте блок в файл <code>~/.cursor/mcp.json</code>. Если сервер не появился в списке, перезапустите Cursor.</p>
 <div class="box">
 <pre id="config">{
   &quot;mcpServers&quot;: {
@@ -157,8 +166,8 @@ footer p { max-width: none; }
 }</pre>
 <button type="button" data-copy="config">Скопировать</button>
 </div>
-<p class="note">Шаги для Claude я прошёл на этом сервере. Шаги для Cursor сверил с его документацией, шаг для ChatGPT не проверял.</p>
-<p class="note">Claude Desktop, консольный клиент через API и свой Telegram-бот подключаются локально: команды и конфиг лежат <a href="https://github.com/outofcost/mcp-data-analytics#запустить-у-себя">в README</a>.</p>
+</details>
+<p>Claude Desktop, консольный клиент через API и свой Telegram-бот подключаются локально: команды и конфиг лежат <a href="https://github.com/outofcost/mcp-data-analytics#запустить-у-себя">в README</a>.</p>
 
 <h2>В новом чате отправьте запрос</h2>
 <div class="box">
