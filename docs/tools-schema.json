@@ -667,7 +667,7 @@
     {
       "name": "save_report",
       "title": "Сохранить отчёт",
-      "description": "Собирает отчёт в Markdown и сохраняет его на диск.\n\nВ отчёт входят: что сделано с данными, все построенные графики\nс подписями, выводы и рекомендации из аргументов, цифры из\ncollect_findings. Возвращает путь к файлу и список того, чего\nотчёту не хватает.",
+      "description": "Собирает отчёт и сохраняет его в двух видах: Markdown и PDF.\n\nВ отчёт входят: что сделано с данными, все построенные графики\nс подписями, выводы и рекомендации из аргументов, цифры из\ncollect_findings. PDF это один файл с графиками внутри, его\nудобно открыть или переслать. Возвращает пути к файлам, ссылку\nна PDF (если сервер работает по HTTP) и список того, чего отчёту\nне хватает.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -715,8 +715,18 @@
             "type": "string"
           },
           "report_path": {
-            "description": "Путь к отчёту от корня репозитория",
+            "description": "Путь к отчёту в Markdown от корня репозитория",
             "title": "Report Path",
+            "type": "string"
+          },
+          "pdf_path": {
+            "description": "Путь к тому же отчёту в PDF: один файл с графиками внутри",
+            "title": "Pdf Path",
+            "type": "string"
+          },
+          "report_url": {
+            "description": "Ссылка на PDF для браузера. Пусто, если сервер запущен локально",
+            "title": "Report Url",
             "type": "string"
           },
           "charts": {
@@ -741,6 +751,8 @@
         "required": [
           "dataset_id",
           "report_path",
+          "pdf_path",
+          "report_url",
           "charts",
           "warnings",
           "next_step"

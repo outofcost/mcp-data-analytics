@@ -11,11 +11,29 @@
 
 import argparse
 import logging
+import os
 
+from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.requests import Request
+from starlette.responses import FileResponse, PlainTextResponse, Response
 
 from analytics_mcp.app import build_server
 from analytics_mcp.settings import Settings
+
+
+def add_report_route(server: MCPServer, settings: Settings) -> None:
+    """Добавляет адрес, по которому браузер получает PDF отчёта.
+
+    Ссылку с ключом выдаёт save_report. Без верного ключа сервер отвечает
+    404, список отчётов нигде не показывается.
+    """
+    @server.custom_route("/reports/{key}/report.pdf", methods=["GET"])
+    async def report(request: Request) -> Response:
+        path = settings.report_links.get(request.path_params["key"])
+        if path is None:
+            return PlainTextResponse("Отчёт не найден", status_code=404)
+        return FileResponse(path, media_type="application/pdf")
 
 
 def main() -> None:
@@ -35,11 +53,18 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
 
     if not args.http:
-        build_server().run()
+        # Локально сервер может сам открыть готовый отчёт на экране.
+        open_report = os.environ.get("ANALYTICS_OPEN_REPORT") == "1"
+        build_server(Settings(open_report=open_report)).run()
         return
 
     # По HTTP адрес сервера публичный, поэтому он читает только папку data/.
-    server = build_server(Settings(restrict_to_data_dir=True))
+    # Отчёт лежит на диске сервера, пользователь получает его по ссылке.
+    public_url = (f"https://{args.public_host}" if args.public_host
+                  else f"http://127.0.0.1:{args.port}")
+    settings = Settings(restrict_to_data_dir=True, public_url=public_url)
+    server = build_server(settings)
+    add_report_route(server, settings)
     # Без списка разрешённых хостов сервер отвечает 421 на запрос через
     # туннель: это защита от подмены DNS.
     hosts = [f"127.0.0.1:{args.port}", f"localhost:{args.port}"]

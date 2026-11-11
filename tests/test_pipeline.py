@@ -102,8 +102,35 @@ def test_full_chain_on_sales_data(tmp_path):
             encoding="utf-8")
         assert text.count("![") == 3
         assert "Пересмотреть цену готовых обедов." in text
+        # Тот же отчёт одним файлом: PDF с тремя графиками внутри.
+        assert report["pdf_path"].endswith("report.pdf")
+        pdf = (tmp_path / "output" / raw_id / "report.pdf").read_bytes()
+        assert pdf.startswith(b"%PDF")
+        assert pdf.count(b"/Subtype /Image") == 3
+        # Локально ссылки нет: отчёт лежит на машине пользователя.
+        assert report["report_url"] == ""
 
     run(tmp_path, scenario)
+
+
+def test_report_link_in_http_mode(tmp_path):
+    """По HTTP save_report возвращает ссылку на PDF со случайным ключом."""
+    async def scenario(session: Session) -> None:
+        raw_id = (await session.call(
+            "load_data", file_path="sales_data.csv")).data["dataset_id"]
+        urls = [
+            (await session.call(
+                "save_report", dataset_id=raw_id, title="Отчёт",
+                conclusions=["Вывод"], recommendations=["Совет"],
+            )).data["report_url"]
+            for _ in range(2)]
+        for url in urls:
+            assert url.startswith("https://example.test/reports/")
+            assert url.endswith("/report.pdf")
+        # Ключ каждый раз новый: по старой ссылке новый отчёт не угадать.
+        assert urls[0] != urls[1]
+
+    run(tmp_path, scenario, public_url="https://example.test")
 
 
 def test_next_step_leads_through_stages_in_order(tmp_path):

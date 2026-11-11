@@ -6,6 +6,8 @@
 с графиками и журналом очистки.
 """
 
+import secrets
+import webbrowser
 from datetime import date
 from typing import Annotated, Any
 
@@ -16,6 +18,7 @@ from pydantic import Field
 from analytics_mcp import columns as col
 from analytics_mcp.models import FindingsResult, ReportResult
 from analytics_mcp.registry import Skill, register_skill, tool
+from analytics_mcp.report_pdf import write_pdf
 from analytics_mcp.store import Analysis
 from analytics_mcp.style import MONTHS_FULL
 
@@ -256,12 +259,14 @@ class InsightGenerationSkill(Skill):
             description="Практические рекомендации, каждая отдельной "
                         "строкой")],
     ) -> ReportResult:
-        """Собирает отчёт в Markdown и сохраняет его на диск.
+        """Собирает отчёт и сохраняет его в двух видах: Markdown и PDF.
 
         В отчёт входят: что сделано с данными, все построенные графики
         с подписями, выводы и рекомендации из аргументов, цифры из
-        collect_findings. Возвращает путь к файлу и список того, чего
-        отчёту не хватает.
+        collect_findings. PDF это один файл с графиками внутри, его
+        удобно открыть или переслать. Возвращает пути к файлам, ссылку
+        на PDF (если сервер работает по HTTP) и список того, чего отчёту
+        не хватает.
         """
         conclusions = [text.strip() for text in conclusions if text.strip()]
         recommendations = [text.strip() for text in recommendations
@@ -322,10 +327,26 @@ class InsightGenerationSkill(Skill):
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / "report.md"
         path.write_text("\n".join(lines), encoding="utf-8")
+        # Тот же отчёт одним файлом: в Markdown графики лежат рядом
+        # отдельными картинками, в PDF они внутри.
+        pdf_path = folder / "report.pdf"
+        write_pdf(lines, folder, pdf_path)
         analysis.report_path = path
+
+        report_url = ""
+        if self.settings.public_url:
+            # По HTTP файл лежит на чужой для пользователя машине, поэтому
+            # сервер отдаёт его по ссылке со случайным ключом.
+            key = secrets.token_urlsafe(16)
+            self.settings.report_links[key] = pdf_path
+            report_url = f"{self.settings.public_url}/reports/{key}/report.pdf"
+        if self.settings.open_report:
+            webbrowser.open(pdf_path.resolve().as_uri())
         return ReportResult(
             dataset_id=dataset_id,
             report_path=self.settings.relative(path),
+            pdf_path=self.settings.relative(pdf_path),
+            report_url=report_url,
             charts=len(analysis.charts),
             warnings=warnings,
             next_step=self.next_step(dataset),

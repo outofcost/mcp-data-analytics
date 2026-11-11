@@ -52,10 +52,14 @@ class Session:
 
 
 def run(tmp_path: Path, scenario: Callable[[Session], Awaitable[None]],
-        restrict: bool = False) -> None:
-    """Запускает сценарий теста на сервере с папкой вывода в tmp_path."""
+        restrict: bool = False, public_url: str = "") -> None:
+    """Запускает сценарий теста на сервере с папкой вывода в tmp_path.
+
+    ``restrict`` и ``public_url`` включают то, что отличает режим HTTP:
+    чтение только из папки data/ и ссылку на отчёт.
+    """
     settings = Settings(output_dir=tmp_path / "output",
-                        restrict_to_data_dir=restrict)
+                        restrict_to_data_dir=restrict, public_url=public_url)
 
     async def main() -> None:
         async with Client(build_server(settings)) as client:

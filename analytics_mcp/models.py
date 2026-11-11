@@ -140,8 +140,13 @@ class ReportResult(BaseModel):
     """Ответ save_report: где лежит отчёт и что в него вошло."""
 
     dataset_id: str = Field(description=DATASET_ID)
-    report_path: str = Field(description="Путь к отчёту от корня "
-                                         "репозитория")
+    report_path: str = Field(description="Путь к отчёту в Markdown от "
+                                         "корня репозитория")
+    pdf_path: str = Field(description="Путь к тому же отчёту в PDF: один "
+                                      "файл с графиками внутри")
+    report_url: str = Field(description="Ссылка на PDF для браузера. "
+                                        "Пусто, если сервер запущен "
+                                        "локально")
     charts: int = Field(description="Сколько графиков в отчёте")
     warnings: list[str] = Field(
         description="Чего отчёту не хватает. Пустой список: всё на месте")

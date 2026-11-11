@@ -19,7 +19,8 @@ if TYPE_CHECKING:
     from analytics_mcp.registry import Skill
 
 FINISHED = ("Анализ завершён. Покажите пользователю выводы, рекомендации "
-            "и путь к файлу отчёта.")
+            "и где взять отчёт: ссылку report_url, если она не пустая, "
+            "иначе путь pdf_path.")
 
 
 class Workflow:
