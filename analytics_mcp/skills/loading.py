@@ -3,14 +3,16 @@
 import csv
 import io
 from pathlib import Path
-from typing import Annotated
+from collections.abc import Callable
+from typing import Annotated, Any
 
 import pandas as pd
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
 from analytics_mcp import columns as col
-from analytics_mcp.models import ColumnInfo, DescribeResult, LoadResult
+from analytics_mcp.models import (ColumnInfo, DescribeResult, FilesResult,
+                                  LoadResult)
 from analytics_mcp.registry import Skill, register_skill, tool
 from analytics_mcp.store import Analysis
 
@@ -144,13 +146,55 @@ class DataLoadingSkill(Skill):
                             "на части.")
         return path
 
+    def _data_files(self) -> list[Path]:
+        """Находит файлы CSV и Excel в папке data/ сервера.
+
+        Вложенные папки не просматриваются: в data/uploads лежат файлы,
+        присланные боту, и их имена другим пользователям показывать нельзя.
+        """
+        return sorted(path for path in self.settings.data_dir.glob("*")
+                      if path.suffix.lower() in CSV_TYPES | EXCEL_TYPES)
+
     def _available_files(self) -> str:
-        """Перечисляет файлы данных в папке data/ для текста ошибки."""
+        """Перечисляет файлы данных в папке data/ одной строкой."""
         folder = self.settings.data_dir
-        names = sorted(p.relative_to(folder).as_posix()
-                       for p in folder.rglob("*")
-                       if p.suffix.lower() in CSV_TYPES | EXCEL_TYPES)
+        names = [path.relative_to(folder).as_posix()
+                 for path in self._data_files()]
         return ", ".join(names[:20]) or "файлов нет"
+
+    def describe(self, method: Callable[..., Any]) -> str:
+        """Дописывает к описанию list_data_files имена файлов в папке.
+
+        Клиент с отложенной загрузкой инструментов ищет их по тексту
+        описания. Когда пользователь называет файл по имени, поиск находит
+        этот инструмент, и модель узнаёт, что файл лежит на сервере.
+        """
+        text = super().describe(method)
+        if method.__name__ == "list_data_files":
+            text += f"\n\nСейчас в папке: {self._available_files()}."
+        return text
+
+    @tool(title="Файлы с данными на сервере")
+    def list_data_files(self) -> FilesResult:
+        """Показывает файлы с данными (CSV, Excel) в папке data/ сервера.
+
+        Вызывайте, когда пользователь называет файл по имени или
+        спрашивает, какие данные есть. Файл из этой папки не нужно
+        прикреплять к чату: load_data читает его по имени.
+        """
+        folder = self.settings.data_dir
+        files = [{"name": path.relative_to(folder).as_posix(),
+                  "size_kb": round(path.stat().st_size / 1024, 1)}
+                 for path in self._data_files()]
+        if files:
+            next_step = ("Вызовите load_data(file_path=\"<имя файла>\") "
+                         "с нужным файлом из списка.")
+        else:
+            next_step = ("Файлов нет. Попросите пользователя положить файл "
+                         "в папку data/ или передать таблицу текстом в "
+                         "csv_text инструмента load_data.")
+        return FilesResult(folder=self.settings.relative(folder),
+                           files=files, next_step=next_step)
 
     def _read(self, path: Path, sheet: str) -> tuple[pd.DataFrame, list[str]]:
         """Читает файл в таблицу без заголовка, все значения как есть."""
@@ -175,7 +219,7 @@ class DataLoadingSkill(Skill):
             raise ToolError(f"Лист «{name}» пустой.")
         return raw, notes
 
-    @tool
+    @tool(title="Загрузить данные из CSV или Excel")
     def load_data(
         self,
         file_path: Annotated[str, Field(
@@ -188,12 +232,18 @@ class DataLoadingSkill(Skill):
                         "пользователь прикрепил или вставил таблицу в чат "
                         "и пути к файлу нет")] = "",
     ) -> LoadResult:
-        """Загружает таблицу и определяет её структуру. Первый шаг анализа.
+        """Загружает таблицу из файла CSV или Excel. Первый шаг анализа.
+
+        Вызывайте, когда пользователь просит проанализировать данные,
+        продажи или файл, построить графики, дать выводы и рекомендации.
+        Файл, названный по имени (например, sales_data.csv), ищется в папке
+        data/ сервера: прикреплять его к чату не нужно.
 
         Нужен один из аргументов: file_path или csv_text. Сам находит строку
         заголовка, разделитель и кодировку, определяет тип каждой колонки
         (дата, число, категория), считает пропуски и дубликаты. Возвращает
-        dataset_id, по которому остальные инструменты находят таблицу.
+        dataset_id, по которому остальные инструменты находят таблицу,
+        и порядок дальнейшего анализа.
         """
         if csv_text.strip():
             if len(csv_text) > MAX_TEXT_CHARS:
@@ -265,7 +315,7 @@ class DataLoadingSkill(Skill):
                     f"ответа анализ пойдёт по колонке «{numbers[0]}»."]
         return []
 
-    @tool
+    @tool(title="Базовая статистика")
     def describe_data(
         self,
         dataset_id: Annotated[str, Field(

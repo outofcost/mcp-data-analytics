@@ -147,7 +147,7 @@ class DataCleaningSkill(Skill):
         """Подсказывает запустить очистку исходной таблицы."""
         return f"Вызовите clean_data(dataset_id=\"{analysis.root_id}\")."
 
-    @tool
+    @tool(title="Очистить данные")
     def clean_data(
         self,
         dataset_id: Annotated[str, Field(

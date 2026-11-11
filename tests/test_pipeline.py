@@ -19,12 +19,29 @@ def test_tools_match_assignment_and_are_described(tmp_path):
             for argument, schema in tool.input_schema["properties"].items():
                 assert schema.get("description"), (tool.name, argument)
         by_name = {tool.name: tool for tool in tools}
+        # У инструментов есть название для пользователя.
+        assert by_name["load_data"].title == (
+            "Загрузить данные из CSV или Excel")
+        # Описание называет файлы в папке: так клиент находит инструмент,
+        # когда пользователь упомянул файл по имени.
+        assert "sales_data.csv" in by_name["list_data_files"].description
         # Необязательные аргументы необязательны.
         assert "required" not in by_name["load_data"].input_schema
         assert by_name["clean_data"].input_schema["required"] == [
             "dataset_id"]
         # У инструментов без картинки описан формат ответа.
         assert by_name["load_data"].output_schema["properties"]["next_step"]
+
+    run(tmp_path, scenario)
+
+
+def test_list_data_files_shows_server_folder(tmp_path):
+    """Список файлов называет данные сервера и следующий шаг."""
+    async def scenario(session: Session) -> None:
+        reply = (await session.call("list_data_files")).data
+        names = [item["name"] for item in reply["files"]]
+        assert {"sales_data.csv", "orders_dirty.xlsx"} <= set(names)
+        assert "load_data" in reply["next_step"]
 
     run(tmp_path, scenario)
 

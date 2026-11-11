@@ -4,8 +4,6 @@
 реестра. Поэтому новый скилл не требует правок в этом файле.
 """
 
-import inspect
-
 from mcp.server import MCPServer
 from mcp.server.mcpserver.prompts.base import Prompt
 
@@ -28,9 +26,8 @@ def build_server(settings: Settings | None = None) -> MCPServer:
     server = MCPServer(SERVER_NAME, instructions=workflow.instructions())
     for skill in workflow.skills:
         for method in skill.tools():
-            # Описанием инструмента служит докстринг метода без отступов.
-            server.add_tool(method,
-                            description=inspect.cleandoc(method.__doc__))
+            server.add_tool(method, title=method.title or None,
+                            description=skill.describe(method))
 
     def analyze_file(file_path: str) -> str:
         """Полный анализ файла: загрузка, очистка, графики, отчёт."""

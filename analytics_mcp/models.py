@@ -28,6 +28,15 @@ class ColumnInfo(BaseModel):
     examples: list[str] = Field(description="До трёх примеров значений")
 
 
+class FilesResult(BaseModel):
+    """Ответ list_data_files: какие файлы данных видит сервер."""
+
+    folder: str = Field(description="Папка сервера, где лежат файлы")
+    files: list[dict[str, Any]] = Field(
+        description="Файлы CSV и Excel: имя для load_data и размер в КБ")
+    next_step: str = Field(description=NEXT_STEP)
+
+
 class LoadResult(BaseModel):
     """Ответ load_data: структура загруженной таблицы."""
 

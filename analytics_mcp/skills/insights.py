@@ -175,7 +175,7 @@ class InsightGenerationSkill(Skill):
                 f"{analysis.current_id}\", title, conclusions, "
                 "recommendations).")
 
-    @tool
+    @tool(title="Цифры для выводов")
     def collect_findings(
         self,
         dataset_id: Annotated[str, Field(
@@ -243,7 +243,7 @@ class InsightGenerationSkill(Skill):
                               how_to_use=HOW_TO_USE,
                               next_step=self.next_step(dataset))
 
-    @tool
+    @tool(title="Сохранить отчёт")
     def save_report(
         self,
         dataset_id: Annotated[str, Field(

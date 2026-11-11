@@ -37,7 +37,7 @@ class AbcAnalysisSkill(Skill):
              "и C по вкладу в показатель. Вызывайте, когда пользователь "
              "спрашивает, какие товары, регионы или клиенты главные.")
 
-    @tool
+    @tool(title="ABC-анализ")
     def abc_analysis(
         self,
         dataset_id: Annotated[str, Field(

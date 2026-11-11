@@ -7,6 +7,7 @@
 """
 
 import importlib
+import inspect
 import pkgutil
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -20,10 +21,19 @@ if TYPE_CHECKING:
 _SKILLS: dict[str, type["Skill"]] = {}
 
 
-def tool(method: Callable[..., Any]) -> Callable[..., Any]:
-    """Помечает метод скилла как инструмент MCP."""
-    method.is_tool = True
-    return method
+def tool(method: Callable[..., Any] | None = None, *,
+         title: str = "") -> Callable[..., Any]:
+    """Помечает метод скилла как инструмент MCP.
+
+    Работает и как ``@tool``, и как ``@tool(title="...")``. Название
+    показывается пользователю в клиенте вместо имени функции.
+    """
+    def mark(function: Callable[..., Any]) -> Callable[..., Any]:
+        function.is_tool = True
+        function.title = title
+        return function
+
+    return mark(method) if method else mark
 
 
 class Skill:
@@ -51,6 +61,14 @@ class Skill:
         names = [name for name, value in vars(type(self)).items()
                  if getattr(value, "is_tool", False)]
         return [getattr(self, name) for name in names]
+
+    def describe(self, method: Callable[..., Any]) -> str:
+        """Возвращает описание инструмента: докстринг метода без отступов.
+
+        По этому тексту клиент ищет подходящий инструмент, поэтому в нём
+        должны быть слова, которыми пользователь формулирует запрос.
+        """
+        return inspect.cleandoc(method.__doc__ or "")
 
     def is_done(self, analysis: Analysis) -> bool:
         """Отвечает, выполнен ли этап. По умолчанию этап необязательный."""

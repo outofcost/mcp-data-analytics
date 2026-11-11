@@ -97,7 +97,7 @@ class VisualizationSkill(Skill):
                 f"«{ROLE_NAMES[role]}». Подходят: {suitable}.")
         return name
 
-    @tool
+    @tool(title="Подобрать графики")
     def suggest_charts(
         self,
         dataset_id: Annotated[str, Field(description=DATASET_ID)],
@@ -156,7 +156,7 @@ class VisualizationSkill(Skill):
         return SuggestResult(dataset_id=dataset_id, suggestions=suggestions,
                              next_step=self.next_step(dataset))
 
-    @tool
+    @tool(title="График тренда")
     def plot_trend(
         self,
         dataset_id: Annotated[str, Field(description=DATASET_ID)],
@@ -253,7 +253,7 @@ class VisualizationSkill(Skill):
         return publish_chart(self, dataset, key, title, figure, facts,
                              excluded)
 
-    @tool
+    @tool(title="График распределения")
     def plot_distribution(
         self,
         dataset_id: Annotated[str, Field(description=DATASET_ID)],
@@ -378,7 +378,7 @@ class VisualizationSkill(Skill):
                 for value, amount in negative.items()) + ".")
         return title, figure, facts
 
-    @tool
+    @tool(title="Матрица корреляций")
     def correlation_analysis(
         self,
         dataset_id: Annotated[str, Field(description=DATASET_ID)],
