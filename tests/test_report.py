@@ -4,7 +4,7 @@ import re
 
 from helpers import CONCLUSIONS, RECOMMENDATIONS, Session, run
 
-from analytics_mcp.report import word_count
+from analytics_mcp.report import tidy, word_count
 from analytics_mcp.report_pdf import ReportPdf
 
 
@@ -189,3 +189,16 @@ def test_chat_summary_ends_with_the_link_in_http_mode(tmp_path):
         assert "Очистка не выполнялась." in report["chat_summary"]
 
     run(tmp_path, scenario, public_url="https://example.test")
+
+
+def test_report_text_is_brought_to_one_form():
+    """Имена колонок, даты, минус и разряды чисел пишутся одинаково."""
+    columns = ["Sales", "Profit", "Выручка, руб"]
+    assert tidy("Sales упали до -126 415 к 2024-12-25", columns) == (
+        "Продажи упали до −126 415 к 25.12.2024")
+    assert tidy("в колонке «Выручка, руб» пусто", columns) == (
+        "в колонке «Выручка» пусто")
+    assert tidy("Москва — 2 293 169, рост 2023-2024") == (
+        "Москва: 2 293 169, рост 2023-2024")
+    # Имя файла с тем же словом остаётся как есть.
+    assert tidy("sales_data.csv", columns) == "sales_data.csv"
