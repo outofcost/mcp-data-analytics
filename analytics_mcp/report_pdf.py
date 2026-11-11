@@ -181,7 +181,13 @@ def draw_charts(pdf: ReportPdf, report: Report) -> None:
 
 def draw_journal(pdf: ReportPdf, report: Report) -> None:
     """Рисует журнал: что сделано при чтении и при очистке."""
-    pdf.keep_together(40)
+    # Журнал не делится между страницами, пока помещается на одну: иначе
+    # на последней странице остаются две-три строки. 40 мм занимают
+    # заголовки и абзац о том, как собран отчёт.
+    notes = report.reading + report.cleaning
+    pdf.keep_together(40 + sum(
+        pdf.paragraph(note, 9, indent=MARK_WIDTH, dry_run=True) + 0.8
+        for note in notes))
     pdf.section("Что сделано с данными")
     for title, notes in (("При чтении файла", report.reading),
                          ("При очистке", report.cleaning)):
