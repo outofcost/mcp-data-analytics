@@ -26,6 +26,8 @@ from analytics_mcp import style  # noqa: E402
 SERVER_URL = "https://affluent-grant-finalize.ngrok-free.dev/mcp"
 BOT_URL = "https://t.me/test_vkusvillmcpKK_bot"
 REPO_URL = "https://github.com/outofcost/mcp-data-analytics"
+# Готовый отчёт по sales_data.csv: путь от корня репозитория.
+EXAMPLE_REPORT = "examples/report-sales/report.pdf"
 
 SCHEMA_PATH = ROOT / "docs" / "tools-schema.json"
 PAGE_PATH = ROOT / "docs" / "index.html"
@@ -200,6 +202,11 @@ footer p { max-width: none; }
 чистит данные и строит графики.</p>
 <p class="lead">Подключите его к своему ИИ-помощнику: в ответ на запрос \
 в чате придут графики, выводы с рекомендациями и отчёт в PDF.</p>
+<p>Результат можно посмотреть, ничего не подключая: \
+<a href="$repo_url/blob/main/$example_report">пример отчёта \
+по sales_data.csv</a> лежит в репозитории. Ссылку на PDF в ответе сервера \
+браузер открывает через страницу-предупреждение ngrok: на ней нужно нажать \
+кнопку продолжения.</p>
 
 <h2>Подключите сервер по адресу</h2>
 <div class="box short">
@@ -245,10 +252,10 @@ Telegram-бот подключаются локально: команды и к�
 <button type="button" data-copy="fallback">Скопировать</button>
 </div>
 
-<h2>Попробуйте без установки</h2>
-<p>Напишите в Telegram боту <a href="$bot_url">@$bot_name</a>. Пришлите \
-ему CSV или Excel, запрос напишите в подписи к файлу. Примерно через \
-минуту придут альбом графиков, текст выводов и отчёт в PDF.</p>
+<h2>Или напишите боту в Telegram</h2>
+<p>Пришлите боту <a href="$bot_url">@$bot_name</a> файл CSV или Excel, \
+запрос напишите в подписи к файлу. Примерно через минуту придут альбом \
+графиков, текст выводов и отчёт в PDF.</p>
 
 <h2>Какие инструменты видит модель</h2>
 <p>Порядок этапов задаёт сервер: каждый ответ инструмента называет \
@@ -336,6 +343,7 @@ def build_page(schema: dict) -> str:
         bot_name=html.escape(BOT_URL.rsplit("/", 1)[-1]),
         repo_url=html.escape(REPO_URL),
         repo_name=html.escape(REPO_URL.split("//", 1)[-1]),
+        example_report=html.escape(EXAMPLE_REPORT),
         config=html.escape(CONFIG),
         chat_request=html.escape(CHAT_REQUEST),
         fallback=html.escape(FALLBACK),

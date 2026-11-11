@@ -66,3 +66,12 @@ def test_config_block_is_valid_json_with_server_address():
         "analytics": {"url": build_landing.SERVER_URL}}}
     page = build_landing.build_page(read_schema())
     assert html.escape(build_landing.CONFIG) in page
+
+
+def test_example_report_link_points_to_file_in_repository():
+    """Ссылка на пример отчёта ведёт на файл, который лежит в репозитории."""
+    assert (build_landing.ROOT / build_landing.EXAMPLE_REPORT).is_file()
+    page = build_landing.build_page(read_schema())
+    link = (f'{build_landing.REPO_URL}/blob/main/'
+            f'{build_landing.EXAMPLE_REPORT}')
+    assert f'<a href="{link}">' in page
