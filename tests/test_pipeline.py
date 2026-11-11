@@ -2,7 +2,8 @@
 
 from pathlib import Path
 
-from helpers import PNG_SIGNATURE, Session, run
+from helpers import (CONCLUSIONS, PNG_SIGNATURE, RECOMMENDATIONS, Session,
+                     run)
 
 ASSIGNMENT_TOOLS = {"load_data", "describe_data", "plot_trend",
                     "plot_distribution", "correlation_analysis"}
@@ -94,14 +95,15 @@ def test_full_chain_on_sales_data(tmp_path):
 
         report = (await session.call(
             "save_report", dataset_id=clean_id, title="Продажи 2023–2024",
-            conclusions=["В декабре продажи выше обычного месяца."],
-            recommendations=["Пересмотреть цену готовых обедов."])).data
+            conclusions=CONCLUSIONS,
+            recommendations=RECOMMENDATIONS)).data
         assert report["charts"] == 3
         assert report["warnings"] == []
         text = (tmp_path / "output" / raw_id / "report.md").read_text(
             encoding="utf-8")
         assert text.count("![") == 3
         assert "Пересмотреть цену готовых обедов." in text
+        assert "В декабре продажи выше обычного месяца." in text
         # Тот же отчёт одним файлом: PDF с тремя графиками внутри.
         assert report["pdf_path"].endswith("report.pdf")
         pdf = (tmp_path / "output" / raw_id / "report.pdf").read_bytes()
@@ -121,7 +123,7 @@ def test_report_link_in_http_mode(tmp_path):
         urls = [
             (await session.call(
                 "save_report", dataset_id=raw_id, title="Отчёт",
-                conclusions=["Вывод"], recommendations=["Совет"],
+                conclusions=CONCLUSIONS, recommendations=RECOMMENDATIONS,
             )).data["report_url"]
             for _ in range(2)]
         for url in urls:
@@ -160,8 +162,8 @@ def test_next_step_leads_through_stages_in_order(tmp_path):
                                     dataset_id=clean_id)).data
         assert "save_report" in reply["next_step"]
         reply = (await session.call("save_report", dataset_id=clean_id,
-                                    title="Отчёт", conclusions=["Вывод"],
-                                    recommendations=["Совет"])).data
+                                    title="Отчёт", conclusions=CONCLUSIONS,
+                                    recommendations=RECOMMENDATIONS)).data
         assert reply["next_step"].startswith("Анализ завершён")
 
     run(tmp_path, scenario)

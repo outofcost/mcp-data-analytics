@@ -1,8 +1,11 @@
-"""Формат ответов инструментов.
+"""Формат ответов инструментов и составных аргументов.
 
 Из этих моделей SDK строит выходную схему (``outputSchema``) каждого
 инструмента: клиент заранее знает, какие поля придут. В каждом ответе есть
 ``next_step``: подсказка модели, что вызвать дальше.
+
+``Conclusion`` и ``Recommendation`` задают форму аргументов ``save_report``:
+по ним SDK строит входную схему, и любая модель пишет выводы в одном виде.
 
 У инструментов с графиками выходной схемы нет: SDK не строит её для ответа
 с картинкой. Они возвращают ``ChartResult`` текстом в формате JSON и
@@ -134,6 +137,26 @@ class FindingsResult(BaseModel):
                     "корреляции и сведения об очистке")
     how_to_use: str = Field(description="Как писать выводы по этим цифрам")
     next_step: str = Field(description=NEXT_STEP)
+
+
+class Conclusion(BaseModel):
+    """Один вывод отчёта: аргумент save_report."""
+
+    headline: str = Field(description=(
+        "Утверждение до 8 слов, без точки в конце. Пример: «Готовые обеды "
+        "продаются в убыток»"))
+    evidence: str = Field(description=(
+        "Одно-два предложения с цифрой из collect_findings, до 180 знаков"))
+
+
+class Recommendation(BaseModel):
+    """Одна рекомендация отчёта: аргумент save_report."""
+
+    action: str = Field(description=(
+        "Что сделать: до 10 слов, начинается с глагола в неопределённой "
+        "форме. Пример: «Пересчитать цену готовых обедов»"))
+    reason: str = Field(description=(
+        "Основание: цифра или факт из collect_findings, до 180 знаков"))
 
 
 class ReportResult(BaseModel):

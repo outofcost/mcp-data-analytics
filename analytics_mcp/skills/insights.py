@@ -16,7 +16,9 @@ from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
 from analytics_mcp import columns as col
-from analytics_mcp.models import FindingsResult, ReportResult
+from analytics_mcp import report as rules
+from analytics_mcp.models import (Conclusion, FindingsResult,
+                                  Recommendation, ReportResult)
 from analytics_mcp.registry import Skill, register_skill, tool
 from analytics_mcp.report_pdf import write_pdf
 from analytics_mcp.store import Analysis
@@ -28,10 +30,12 @@ MONTHS_FOR_SEASONALITY = 24
 # Слова в имени колонки, по которым узнаётся процент или доля.
 PERCENT_WORDS = ("%", "процент", "скидк", "discount", "доля", "share")
 HOW_TO_USE = (
-    "Сформулируйте 3–5 выводов и 3–5 практических рекомендаций. Каждый "
-    "вывод опирается на цифру из facts, свои цифры не считайте. Учтите "
-    "сведения об очистке и исключённых выбросах. Затем вызовите "
-    "save_report.")
+    "Сформулируйте от 3 до 5 выводов и от 2 до 4 практических "
+    "рекомендаций, самые важные первыми. Вывод это короткое утверждение "
+    "(headline, до 8 слов) и пояснение с цифрой из facts (evidence, до 180 "
+    "знаков). Рекомендация это действие (action, до 10 слов) и основание "
+    "(reason, до 180 знаков). Свои цифры не считайте. Учтите сведения об "
+    "очистке и исключённых выбросах. Затем вызовите save_report.")
 
 
 def rounded(value: float) -> float:
@@ -177,7 +181,8 @@ class InsightGenerationSkill(Skill):
         return ("Напишите выводы и рекомендации по цифрам из "
                 "collect_findings и вызовите save_report(dataset_id=\""
                 f"{analysis.current_id}\", title, conclusions, "
-                "recommendations).")
+                "recommendations). Вывод: headline и evidence. "
+                "Рекомендация: action и reason.")
 
     @tool(title="Цифры для выводов")
     def collect_findings(
@@ -255,14 +260,18 @@ class InsightGenerationSkill(Skill):
         dataset_id: Annotated[str, Field(
             description="Идентификатор таблицы, по которой шёл анализ")],
         title: Annotated[str, Field(description="Заголовок отчёта")],
-        conclusions: Annotated[list[str], Field(
-            description="Ключевые выводы, каждый отдельной строкой "
-                        "с цифрой из collect_findings")],
-        recommendations: Annotated[list[str], Field(
-            description="Практические рекомендации, каждая отдельной "
-                        "строкой")],
+        conclusions: Annotated[list[Conclusion], Field(
+            description="От 3 до 5 выводов, самый важный первым",
+            json_schema_extra={"minItems": 3, "maxItems": 5})],
+        recommendations: Annotated[list[Recommendation], Field(
+            description="От 2 до 4 рекомендаций, самая важная первой",
+            json_schema_extra={"minItems": 2, "maxItems": 4})],
     ) -> ReportResult:
         """Собирает отчёт и сохраняет его в двух видах: Markdown и PDF.
+
+        Выводы и рекомендации передаются объектами: короткая фраза
+        и пояснение с цифрой. Если форма нарушена, инструмент возвращает
+        список нарушений, вызов нужно исправить и повторить.
 
         В отчёт входят: что сделано с данными, все построенные графики
         с подписями, выводы и рекомендации из аргументов. В Markdown
@@ -271,15 +280,23 @@ class InsightGenerationSkill(Skill):
         пути к файлам, ссылку на PDF (если сервер работает по HTTP)
         и список того, чего отчёту не хватает.
         """
-        conclusions = [text.strip() for text in conclusions if text.strip()]
-        recommendations = [text.strip() for text in recommendations
-                           if text.strip()]
-        if not conclusions or not recommendations:
-            raise ToolError(
-                "В отчёте должен быть хотя бы один вывод и одна "
-                "рекомендация. Передайте непустые списки conclusions и "
-                "recommendations.")
         dataset = self.store.current(dataset_id)
+        found = [(item.headline.strip().rstrip("."), item.evidence.strip())
+                 for item in conclusions]
+        advice = [(item.action.strip().rstrip("."), item.reason.strip())
+                  for item in recommendations]
+        # Число пунктов и длину текста проверяет этот код, а не pydantic:
+        # так модель получает все нарушения сразу и по-русски.
+        problems = rules.check_points(
+            "conclusions", found, ("headline", "evidence"),
+            rules.CONCLUSIONS, rules.HEADLINE_WORDS, need_digit=True)
+        problems += rules.check_points(
+            "recommendations", advice, ("action", "reason"),
+            rules.RECOMMENDATIONS, rules.ACTION_WORDS, need_digit=False)
+        if problems:
+            raise ToolError(
+                "save_report не принял аргументы. Исправьте и вызовите "
+                "снова:\n" + "\n".join(f"- {text}" for text in problems))
         analysis = dataset.analysis
 
         # Предупреждения: какие этапы до этого не доведены до конца.
@@ -312,9 +329,11 @@ class InsightGenerationSkill(Skill):
                       f"![{chart.title}]({chart.path.name})", ""]
             lines += [f"- {fact}" for fact in chart.facts] + [""]
         lines += ["## Выводы", ""]
-        lines += [f"{n}. {text}" for n, text in enumerate(conclusions, 1)]
+        lines += [f"{n}. **{head}.** {body}"
+                  for n, (head, body) in enumerate(found, 1)]
         lines += ["", "## Рекомендации", ""]
-        lines += [f"{n}. {text}" for n, text in enumerate(recommendations, 1)]
+        lines += [f"{n}. **{head}.** {body}"
+                  for n, (head, body) in enumerate(advice, 1)]
         lines += [
             "", "## Как собран отчёт", "",
             "Цифры и графики посчитал сервер. Выводы и рекомендации "

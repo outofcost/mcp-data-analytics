@@ -1,6 +1,6 @@
 """Ошибки приходят ошибками и говорят, что исправить."""
 
-from helpers import Session, run
+from helpers import CONCLUSIONS, RECOMMENDATIONS, Session, run
 
 
 def test_unknown_dataset_points_to_load_data(tmp_path):
@@ -71,13 +71,13 @@ def test_report_needs_conclusions_and_warns_about_skipped_stages(tmp_path):
             "load_data", file_path="sales_data.csv")).data["dataset_id"]
         reply = await session.call("save_report", dataset_id=dataset_id,
                                    title="Отчёт", conclusions=[],
-                                   recommendations=["Совет"])
+                                   recommendations=RECOMMENDATIONS)
         assert reply.is_error
         assert "conclusions" in reply.text
 
         reply = await session.call("save_report", dataset_id=dataset_id,
-                                   title="Отчёт", conclusions=["Вывод"],
-                                   recommendations=["Совет"])
+                                   title="Отчёт", conclusions=CONCLUSIONS,
+                                   recommendations=RECOMMENDATIONS)
         assert not reply.is_error
         warnings = " ".join(reply.data["warnings"])
         assert "Очистка" in warnings and "Графики" in warnings
