@@ -158,12 +158,12 @@ def reading_note(name: str, series: pd.Series, parsed: pd.Series,
     as_string = series.map(lambda value: isinstance(value, str))
     # В Excel часть значений колонки бывает записана текстом: «12 450,50».
     if as_string.any() and not as_string[series.notna()].all():
-        notes.append(f"в колонке «{name}» {int(as_string.sum())} значений "
-                     f"были записаны текстом, прочитал их как {kind}")
+        notes.append(f"в колонке «{name}» значения были записаны текстом: "
+                     f"{int(as_string.sum())}, прочитал их как {kind}")
     lost = int(as_text(series).notna().sum() - parsed.notna().sum())
     if lost:
-        notes.append(f"в колонке «{name}» {lost} значений прочитать как "
-                     f"{kind} не удалось, заменил их пропусками")
+        notes.append(f"в колонке «{name}» значения не удалось прочитать "
+                     f"как {kind}: {lost}, заменил их пропусками")
     return "; ".join(notes)
 
 

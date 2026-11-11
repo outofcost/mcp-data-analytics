@@ -49,16 +49,61 @@ KNOWN_COLUMNS = {
 }
 
 
+# Единицы, которые сервер узнаёт в конце имени колонки: «Выручка, руб».
+UNITS = {"руб": "руб.", "руб.": "руб.", "р": "руб.", "р.": "руб.", "₽": "₽",
+         "шт": "шт.", "шт.": "шт.", "кг": "кг", "%": "%"}
+# Дательный падеж для заголовков «Продажи по товарам». Для колонки, которой
+# здесь нет, заголовок получается «Продажи по колонке «Склад»».
+GROUPED_BY = {
+    "товар": "товарам", "регион": "регионам", "категория": "категориям",
+    "город": "городам", "канал": "каналам", "клиент": "клиентам",
+    "магазин": "магазинам", "менеджер": "менеджерам",
+}
+
+
+def split_unit(name: str) -> tuple[str, str]:
+    """Делит имя колонки на название и единицу измерения.
+
+    «Sales» даёт («Продажи», «»), «Выручка, руб» даёт («Выручка», «руб.»).
+    У незнакомой колонки без единицы названием служит её имя.
+    """
+    known = KNOWN_COLUMNS.get(name.strip().lower())
+    if known:
+        return known
+    title, comma, unit = name.rpartition(",")
+    if comma and unit.strip().lower() in UNITS:
+        return title.strip(), UNITS[unit.strip().lower()]
+    return name.strip(), ""
+
+
 def column_title(name: str) -> str:
     """Возвращает название колонки для заголовка графика, без единицы."""
-    return KNOWN_COLUMNS.get(name.strip().lower(), (name, ""))[0]
+    return split_unit(name)[0]
 
 
 def column_label(name: str, scale_word: str = "") -> str:
-    """Возвращает подпись оси для колонки, с единицей и масштабом."""
-    title, unit = KNOWN_COLUMNS.get(name.strip().lower(), (name, ""))
+    """Возвращает подпись оси для колонки: «Выручка, тыс. руб.»."""
+    title, unit = split_unit(name)
     suffix = " ".join(part for part in (scale_word, unit) if part)
     return f"{title}, {suffix}" if suffix else title
+
+
+def by_column(name: str) -> str:
+    """Возвращает конец заголовка графика: «по товарам»."""
+    title = column_title(name)
+    if title.lower() in GROUPED_BY:
+        return f"по {GROUPED_BY[title.lower()]}"
+    return f"по колонке «{title}»"
+
+
+def plural(count: int, one: str, few: str, many: str) -> str:
+    """Выбирает форму слова после числа: 1 строка, 2 строки, 5 строк."""
+    tail, tens = count % 10, count % 100
+    if tail == 1 and tens != 11:
+        return one
+    if 2 <= tail <= 4 and not 12 <= tens <= 14:
+        return few
+    return many
 
 
 def pick_scale(max_value: float) -> tuple[float, str]:
