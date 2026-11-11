@@ -1,0 +1,64 @@
+"""Общие функции для тестов: сервер во временной папке и вызов инструмента.
+
+Тесты подключаются к серверу настоящим MCP-клиентом из SDK, только без
+отдельного процесса: так проверяется то же, что увидит модель.
+"""
+
+import asyncio
+import base64
+import json
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from mcp import Client
+from mcp.types import ImageContent, TextContent
+
+from analytics_mcp.app import build_server
+from analytics_mcp.settings import Settings
+
+PNG_SIGNATURE = b"\x89PNG"
+
+
+@dataclass
+class Reply:
+    """Ответ инструмента в удобном для проверок виде."""
+
+    is_error: bool
+    text: str
+    data: dict[str, Any]
+    images: list[bytes]
+    structured: dict[str, Any] | None
+
+
+class Session:
+    """Клиент, подключённый к серверу на время одного теста."""
+
+    def __init__(self, client: Client) -> None:
+        self.client = client
+
+    async def call(self, name: str, **arguments: Any) -> Reply:
+        """Вызывает инструмент и разбирает его ответ."""
+        result = await self.client.call_tool(name, arguments)
+        texts = [block.text for block in result.content
+                 if isinstance(block, TextContent)]
+        images = [base64.b64decode(block.data) for block in result.content
+                  if isinstance(block, ImageContent)]
+        text = texts[0] if texts else ""
+        data = {} if result.is_error else json.loads(text)
+        return Reply(bool(result.is_error), text, data, images,
+                     result.structured_content)
+
+
+def run(tmp_path: Path, scenario: Callable[[Session], Awaitable[None]],
+        restrict: bool = False) -> None:
+    """Запускает сценарий теста на сервере с папкой вывода в tmp_path."""
+    settings = Settings(output_dir=tmp_path / "output",
+                        restrict_to_data_dir=restrict)
+
+    async def main() -> None:
+        async with Client(build_server(settings)) as client:
+            await scenario(Session(client))
+
+    asyncio.run(main())
