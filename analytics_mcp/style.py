@@ -28,7 +28,9 @@ CORRELATION_MAP = LinearSegmentedColormap.from_list(
     "correlation", [GREY, "#FFFFFF", MID_GREEN])
 
 FIGURE_SIZE = (8, 4.5)
-DPI = 110
+# Картинка выходит 1280 на 720 точек: Telegram показывает фото такой ширины
+# без уменьшения, и в PDF текст графика остаётся чётким.
+DPI = 160
 
 MONTHS = ["янв", "фев", "мар", "апр", "май", "июн",
           "июл", "авг", "сен", "окт", "ноя", "дек"]
@@ -132,7 +134,10 @@ def format_number(value: float, exact: bool = False) -> str:
 
 def new_figure(title: str) -> tuple[Figure, plt.Axes]:
     """Создаёт график с общим оформлением."""
-    figure, axes = plt.subplots(figsize=FIGURE_SIZE)
+    # Раскладку считает matplotlib: подписи, легенда и шкала помещаются
+    # в лист одного размера, и все графики выходят одинаковыми.
+    figure, axes = plt.subplots(figsize=FIGURE_SIZE, layout="constrained")
+    figure.get_layout_engine().set(w_pad=0.1, h_pad=0.1)  # поля, дюймы
     axes.set_title(title, loc="left", fontsize=13, color=TEXT, pad=12)
     axes.spines[["top", "right"]].set_visible(False)
     axes.spines[["left", "bottom"]].set_color(GREY)
@@ -145,8 +150,7 @@ def new_figure(title: str) -> tuple[Figure, plt.Axes]:
 def save_figure(figure: Figure, path: Path) -> bytes:
     """Сохраняет график в PNG и возвращает его байты."""
     buffer = io.BytesIO()
-    figure.savefig(buffer, format="png", dpi=DPI, bbox_inches="tight",
-                   facecolor="white")
+    figure.savefig(buffer, format="png", dpi=DPI, facecolor="white")
     plt.close(figure)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(buffer.getvalue())
