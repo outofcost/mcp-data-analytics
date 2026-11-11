@@ -22,6 +22,7 @@ import html
 import json
 import os
 import re
+import secrets
 import shlex
 import sys
 from datetime import datetime
@@ -234,11 +235,13 @@ class TelegramBot:
         if response.status_code != 200:
             raise RuntimeError(f"Файл не скачался: {response.status_code}")
 
-        # У каждого файла своя папка с отметкой времени, имя остаётся
-        # настоящим: оно попадает в шапку отчёта.
+        # У каждого файла своя папка, имя остаётся настоящим: оно попадает
+        # в шапку отчёта. К отметке времени добавлен случайный хвост: по
+        # одному времени отправки чужую папку не угадать.
         stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        folder = f"{stamp}_{secrets.token_hex(8)}"
         safe_name = re.sub(r"[^\w.\-]", "_", name)
-        path = UPLOAD_DIR / stamp / safe_name
+        path = UPLOAD_DIR / folder / safe_name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(response.content)
         return path

@@ -1,6 +1,7 @@
 """Чистые функции клиентов: то, что проверяется без сети и модели."""
 
 import asyncio
+import json
 import base64
 import sys
 from pathlib import Path
@@ -56,7 +57,7 @@ def test_long_text_is_split_by_lines():
 
 
 def test_report_files_are_found_in_tool_answer(tmp_path, monkeypatch):
-    """Клиент находит в ответе инструмента пути к существующим отчётам."""
+    """Клиент берёт пути к отчёту из полей ответа сервера."""
     monkeypatch.setattr(console_client, "REPO_ROOT", tmp_path)
     folder = tmp_path / "output" / "x"
     folder.mkdir(parents=True)
@@ -64,7 +65,28 @@ def test_report_files_are_found_in_tool_answer(tmp_path, monkeypatch):
     answer = ('{"report_path": "output/x/report.md", '
               '"pdf_path": "output/x/report.pdf"}')
     assert console_client.find_report_files(answer) == [
-        folder / "report.pdf"]
+        (folder / "report.pdf").resolve()]
+
+
+def test_path_from_table_cell_is_not_sent(tmp_path, monkeypatch):
+    """Путь, вписанный в ячейку таблицы, в список отправки не попадает."""
+    monkeypatch.setattr(console_client, "REPO_ROOT", tmp_path)
+    secret = tmp_path / "secret.md"
+    secret.write_text("чужой файл", encoding="utf-8")
+    (tmp_path / "output").mkdir()
+    # Так выглядит ответ load_data: значение ячейки лежит в превью.
+    preview = json.dumps({
+        "dataset_id": "table_1",
+        "preview": [{"Комментарий": str(secret), "Файл": "secret.md"}],
+        "notes": [f"пример значения: {secret}"],
+    }, ensure_ascii=False)
+    assert console_client.find_report_files(preview) == []
+    # Простой текст с путём тоже ничего не даёт.
+    assert console_client.find_report_files(f"см. {secret}") == []
+    # Даже поле сервера не выводит за пределы папки output/.
+    for value in (str(secret), "secret.md", "output/../secret.md"):
+        answer = json.dumps({"pdf_path": value})
+        assert console_client.find_report_files(answer) == []
 
 
 def test_client_takes_the_ready_answer_from_the_server():
@@ -129,4 +151,9 @@ def test_bot_keeps_the_real_file_name(tmp_path, monkeypatch):
     # Имя файла попадает в шапку отчёта, поэтому отметки времени в нём нет.
     assert path.name == "sales_data.csv"
     assert path.parent.parent == tmp_path
+    # Имя папки не угадать по времени отправки: в нём случайный хвост.
+    again = asyncio.run(bot.download(
+        {"file_name": "sales_data.csv", "file_id": "1", "file_size": 8}))
+    assert again.parent != path.parent
+    assert len(path.parent.name.rsplit("_", 1)[-1]) == 16
     assert path.read_bytes() == b"a,b\n1,2\n"

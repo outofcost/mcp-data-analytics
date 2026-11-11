@@ -18,7 +18,6 @@ import asyncio
 import base64
 import json
 import os
-import re
 import shlex
 import sys
 from collections.abc import Callable
@@ -38,7 +37,8 @@ MAX_STEPS = 20          # предел запросов к модели за о�
 RETRIES = 2             # повторов запроса при временном отказе провайдера
 RETRY_PAUSE = 5         # секунд между повторами
 PREVIEW_CHARS = 300     # сколько символов ответа инструмента идёт в журнал
-REPORT_FILE = re.compile(r"[^\s\"'«»()]+\.(?:md|pdf|html)\b")
+# Поля ответа сервера с путями к отчёту. Других путей клиент не берёт.
+REPORT_FIELDS = ("pdf_path", "report_path")
 
 
 @dataclass
@@ -118,17 +118,32 @@ def result_to_text(result: CallToolResult, tool_name: str, output_dir: Path,
 
 
 def find_report_files(text: str) -> list[Path]:
-    """Ищет в ответе инструмента пути к отчётам (.md, .pdf, .html).
+    """Берёт из ответа сервера пути к отчёту и проверяет, где лежат файлы.
 
-    Возвращает только файлы, которые существуют на диске. Относительный путь
-    считает от корня репозитория: там запущен сервер.
+    Путь читается только из полей pdf_path и report_path на верхнем уровне
+    ответа: их заполняет сервер. Файл принимается, если он существует
+    и лежит в папке output/ сервера. Содержимое таблицы в эти поля попасть
+    не может: оно лежит глубже, в превью и примерах значений.
+
+    Раньше клиент искал пути по всему тексту ответа. Строка «/путь/файл.md»
+    в ячейке таблицы попадала в превью load_data, и бот отправлял этот файл
+    пользователю, хотя сам сервер читать его отказывался.
     """
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return []
+    if not isinstance(data, dict):
+        return []
+    output_root = (REPO_ROOT / "output").resolve()
     found = []
-    for match in REPORT_FILE.findall(text):
-        path = Path(match)
-        if not path.is_absolute():
-            path = REPO_ROOT / path
-        if path.is_file() and path not in found:
+    for name in REPORT_FIELDS:
+        value = data.get(name)
+        if not isinstance(value, str) or not value:
+            continue
+        path = (REPO_ROOT / value).resolve()
+        if (path.is_file() and path.is_relative_to(output_root)
+                and path not in found):
             found.append(path)
     return found
 
