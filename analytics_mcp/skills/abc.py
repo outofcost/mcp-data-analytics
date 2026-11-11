@@ -19,12 +19,13 @@ from analytics_mcp.charts import publish_chart
 from analytics_mcp.registry import Skill, register_skill, tool
 from analytics_mcp.style import column_label, column_title, format_number
 
-# Границы групп по накопленной доле: A даёт первые 80% суммы, B следующие
-# 15%, C оставшиеся 5%.
+# Границы групп по накопленной доле. Значение идёт в группу A, пока сумма
+# значений до него меньше 80% итога, в группу B, пока она меньше 95%.
 A_SHARE = 0.80
 B_SHARE = 0.95
 GROUP_COLORS = {"A": style.DARK_GREEN, "B": style.GREEN, "C": style.GREY}
-MAX_BARS = 20
+MAX_BARS = 20       # столько самых крупных значений помещается на графике
+LABEL_CHARS = 18    # длинное название товара на оси обрезается
 
 
 @register_skill
@@ -44,26 +45,40 @@ class AbcAnalysisSkill(Skill):
             description="Идентификатор таблицы. После очистки: из ответа "
                         "clean_data")],
         col: Annotated[str, Field(
-            description="Колонка-категория, значения которой делятся на "
-                        "группы: товар, регион, клиент")],
+            description="Колонка, значения которой делятся на группы: "
+                        "товар, регион, клиент. Значения в ней должны "
+                        "повторяться")],
         value_col: Annotated[str, Field(
             description="Числовая колонка, по сумме которой считается "
                         "вклад. Пусто: главный показатель таблицы")] = "",
     ) -> list[str | Image]:
-        """Делит значения категории на группы A, B, C по вкладу в сумму.
+        """Делит значения колонки на группы A, B, C по вкладу в сумму.
 
-        Значения сортируются по убыванию суммы. Группа A даёт первые 80%
-        суммы, B следующие 15%, C оставшиеся 5%. Возвращает текст (состав
-        групп с долями) и диаграмму Парето в формате PNG.
+        Значения сортируются по убыванию суммы. Значение попадает в группу
+        A, пока сумма значений до него меньше 80% итога, в группу B, пока
+        она меньше 95%, остальные идут в C. Поэтому при малом числе
+        значений группа A может дать больше 80%. Подходит и колонка
+        с большим числом значений (сотни товаров): на графике будут 20
+        самых крупных. Возвращает текст (состав групп с долями) и диаграмму
+        Парето в формате PNG.
         """
-        dataset = self.store.get(dataset_id)
+        dataset = self.store.current(dataset_id)
         roles = dataset.roles
-        categories = cols.columns_with_role(roles, cols.CATEGORY)
+        # Подходит категория и текстовая колонка с повторами. Товаров
+        # в настоящем ассортименте сотни, роль у такой колонки «текст».
+        frame = dataset.frame
+        suitable = [
+            name for name, role in roles.items()
+            if role == cols.CATEGORY or (
+                role == cols.TEXT
+                and frame[name].nunique() < frame[name].count())
+        ]
         numbers = cols.columns_with_role(roles, cols.NUMBER)
-        if roles.get(col) != cols.CATEGORY:
+        if col not in suitable:
             raise ToolError(
-                f"Для аргумента col нужна колонка-категория, «{col}» не "
-                f"подходит. Подходят: {', '.join(categories) or 'нет'}.")
+                f"Для аргумента col нужна колонка с повторяющимися "
+                f"значениями, «{col}» не подходит. Подходят: "
+                f"{', '.join(suitable) or 'нет'}.")
         value_col = value_col or cols.pick_measure(roles) or ""
         if roles.get(value_col) != cols.NUMBER:
             raise ToolError(
@@ -92,15 +107,18 @@ class AbcAnalysisSkill(Skill):
         title = (f"ABC-анализ: {column_title(value_col)} по колонке "
                  f"«{column_title(col)}»")
         figure, axes = style.new_figure(title)
-        axes.bar([str(v) for v in shown.index], shown / scale,
+        positions = range(len(shown))
+        axes.bar(positions, shown / scale,
                  color=[GROUP_COLORS[groups[v]] for v in shown.index])
+        axes.set_xticks(positions,
+                        [str(v)[:LABEL_CHARS] for v in shown.index])
         axes.set_ylabel(column_label(value_col, scale_word),
                         color=style.TEXT)
         axes.yaxis.set_major_formatter(
             FuncFormatter(lambda value, _: format_number(value)))
         axes.tick_params(axis="x", rotation=30)
         line = axes.twinx()
-        line.plot(range(len(shown)), 100 * share.cumsum().head(MAX_BARS),
+        line.plot(positions, 100 * share.cumsum().head(MAX_BARS),
                   color=style.TEXT, marker="o", markersize=4, linewidth=1.5)
         line.set_ylim(0, 105)
         line.set_ylabel("Накопленная доля, %", color=style.TEXT)
@@ -119,6 +137,9 @@ class AbcAnalysisSkill(Skill):
                     f"Группа {name} ({len(members)} знач., {part} суммы): "
                     + ", ".join(str(v) for v in members[:10])
                     + (" и другие." if len(members) > 10 else "."))
+        if len(totals) > MAX_BARS:
+            facts.append(f"На графике {MAX_BARS} самых крупных значений, "
+                         "группы посчитаны по всем.")
         key = f"abc_analysis:{col}:{value_col}"
         return publish_chart(self, dataset, key, title, figure, facts,
                              excluded)

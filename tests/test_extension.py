@@ -2,6 +2,7 @@
 
 from typing import Annotated
 
+import pandas as pd
 from pydantic import Field
 
 from analytics_mcp import registry
@@ -63,5 +64,32 @@ def test_abc_skill_added_as_one_file(tmp_path):
                                    col="Product", value_col="Profit")
         assert reply.is_error
         assert "Готовые обеды" in reply.text
+
+    run(tmp_path, scenario)
+
+
+def test_abc_works_on_a_column_with_many_values(tmp_path):
+    """ABC считается по колонке с сотней товаров, у которой роль «текст»."""
+    products = [f"Товар {n}" for n in range(1, 41)]
+    frame = pd.DataFrame({
+        "Product Name": products * 3,
+        # Первый товар даёт 1000, остальные от 39 до 1.
+        "Sales": ([1000] + list(range(39, 0, -1))) * 3,
+    })
+    path = tmp_path / "products.csv"
+    frame.to_csv(path, index=False)
+
+    async def scenario(session: Session) -> None:
+        loaded = (await session.call("load_data", file_path=str(path))).data
+        roles = {c["name"]: c["role"] for c in loaded["columns"]}
+        assert roles["Product Name"] == "text"
+        reply = await session.call("abc_analysis",
+                                   dataset_id=loaded["dataset_id"],
+                                   col="Product Name")
+        assert reply.images
+        facts = reply.data["facts"]
+        assert facts[0] == "Значений в колонке «Product Name»: 40."
+        assert facts[1].startswith("Группа A (") and "Товар 1," in facts[1]
+        assert facts[-1].startswith("На графике 20 самых крупных")
 
     run(tmp_path, scenario)

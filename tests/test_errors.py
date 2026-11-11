@@ -98,3 +98,45 @@ def test_http_mode_reads_only_data_folder(tmp_path):
         assert not reply.is_error
 
     run(tmp_path, scenario, restrict=True)
+
+
+def test_old_id_after_cleaning_is_rejected_with_the_new_one(tmp_path):
+    """После очистки расчёт по исходной таблице отклоняется."""
+    async def scenario(session: Session) -> None:
+        raw_id = (await session.call(
+            "load_data", file_path="sales_data.csv")).data["dataset_id"]
+        clean_id = (await session.call(
+            "clean_data", dataset_id=raw_id)).data["dataset_id"]
+        # По исходной таблице график посчитался бы с дубликатами и
+        # выбросами и разошёлся с итогами отчёта.
+        for tool, arguments in (
+                ("plot_trend", {"x_col": "Date", "y_col": "Sales"}),
+                ("abc_analysis", {"col": "Region"}),
+                ("collect_findings", {})):
+            reply = await session.call(tool, dataset_id=raw_id, **arguments)
+            assert reply.is_error, tool
+            assert f'dataset_id="{clean_id}"' in reply.text
+        # Исходную таблицу по-прежнему можно описать и очистить заново.
+        assert not (await session.call(
+            "describe_data", dataset_id=raw_id)).is_error
+
+    run(tmp_path, scenario)
+
+
+def test_public_server_hides_table_names(tmp_path):
+    """Сервер, доступный снаружи, не выдаёт имён чужих таблиц."""
+    async def scenario(session: Session) -> None:
+        first = (await session.call(
+            "load_data", file_path="sales_data.csv")).data["dataset_id"]
+        second = (await session.call(
+            "load_data", file_path="sales_data.csv")).data["dataset_id"]
+        # К имени добавлен случайный хвост: по номеру таблицу не угадать.
+        assert first.startswith("sales_data_1_")
+        assert second.startswith("sales_data_2_")
+        assert first.removeprefix("sales_data_1_") != (
+            second.removeprefix("sales_data_2_"))
+        reply = await session.call("describe_data", dataset_id="sales_data_1")
+        assert reply.is_error
+        assert first not in reply.text and second not in reply.text
+
+    run(tmp_path, scenario, restrict=True)

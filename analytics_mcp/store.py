@@ -6,6 +6,7 @@ DataFrame нельзя передать через MCP: протокол воз�
 """
 
 import re
+import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -76,9 +77,19 @@ class Dataset:
 class DatasetStore:
     """Выдаёт идентификаторы таблицам и возвращает таблицы по ним."""
 
-    def __init__(self) -> None:
+    def __init__(self, private_ids: bool = False) -> None:
+        """Создаёт пустое хранилище.
+
+        Args:
+            private_ids: добавлять к идентификатору случайный хвост и не
+                перечислять таблицы в тексте ошибки. Включается, когда
+                сервер доступен снаружи: память у всех клиентов общая,
+                и по предсказуемому имени чужую таблицу можно было бы
+                прочитать.
+        """
         self._datasets: dict[str, Dataset] = {}
         self._counter = 0
+        self._private_ids = private_ids
 
     def add(self, frame: pd.DataFrame, roles: dict[str, str], source: str,
             notes: list[str]) -> Dataset:
@@ -86,6 +97,8 @@ class DatasetStore:
         self._counter += 1
         stem = re.sub(r"[^a-z0-9]+", "_", Path(source).stem.lower())
         dataset_id = f"{stem.strip('_') or 'data'}_{self._counter}"
+        if self._private_ids:
+            dataset_id += f"_{secrets.token_hex(3)}"
         dataset = Dataset(dataset_id, frame, roles,
                           Analysis(dataset_id, source), notes)
         self._datasets[dataset_id] = dataset
@@ -105,9 +118,27 @@ class DatasetStore:
         dataset = self._datasets.get(dataset_id)
         if dataset is None:
             known = ", ".join(self._datasets) or "пока нет ни одного"
+            listing = ("" if self._private_ids
+                       else f" Загруженные наборы: {known}.")
             raise ToolError(
-                f"Набор данных «{dataset_id}» не найден. Загруженные наборы: "
-                f"{known}. Сначала вызовите load_data и передайте dataset_id "
-                "из его ответа."
+                f"Набор данных «{dataset_id}» не найден.{listing} Сначала "
+                "вызовите load_data и передайте dataset_id из его ответа."
+            )
+        return dataset
+
+    def current(self, dataset_id: str) -> Dataset:
+        """Возвращает таблицу для расчётов: после очистки только очищенную.
+
+        График или итог по исходной таблице после очистки посчитался бы
+        с дубликатами и выбросами и разошёлся с остальным отчётом. Поэтому
+        на старый идентификатор приходит ошибка с правильным.
+        """
+        dataset = self.get(dataset_id)
+        current_id = dataset.analysis.current_id
+        if dataset_id != current_id:
+            raise ToolError(
+                f"Таблица «{dataset_id}» уже очищена. Передайте "
+                f"dataset_id=\"{current_id}\": графики и итоги считаются "
+                "по очищенной таблице."
             )
         return dataset

@@ -194,7 +194,7 @@ class InsightGenerationSkill(Skill):
         корреляции, сведения об очистке.
         Сам выводов не пишет: их формулирует модель по этим цифрам.
         """
-        dataset = self.store.get(dataset_id)
+        dataset = self.store.current(dataset_id)
         analysis, roles = dataset.analysis, dataset.roles
         frame, excluded = dataset.working_frame()
         dates = col.columns_with_role(roles, col.DATE)
@@ -277,7 +277,7 @@ class InsightGenerationSkill(Skill):
                 "В отчёте должен быть хотя бы один вывод и одна "
                 "рекомендация. Передайте непустые списки conclusions и "
                 "recommendations.")
-        dataset = self.store.get(dataset_id)
+        dataset = self.store.current(dataset_id)
         analysis = dataset.analysis
 
         # Предупреждения: какие этапы до этого не доведены до конца.

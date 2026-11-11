@@ -44,6 +44,11 @@ def main() -> None:
                         help="Streamable HTTP вместо stdio")
     parser.add_argument("--port", type=int, default=8000,
                         help="порт для режима HTTP (по умолчанию 8000)")
+    parser.add_argument("--data-only", action="store_true",
+                        help="читать файлы только из папки data/. Нужен, "
+                             "когда запросы пишет посторонний человек, "
+                             "например пользователь бота. В режиме HTTP "
+                             "включён всегда")
     parser.add_argument("--public-host", default="",
                         help="имя хоста туннеля без https://, например "
                              "abc.trycloudflare.com")
@@ -55,7 +60,8 @@ def main() -> None:
     if not args.http:
         # Локально сервер может сам открыть готовый отчёт на экране.
         open_report = os.environ.get("ANALYTICS_OPEN_REPORT") == "1"
-        build_server(Settings(open_report=open_report)).run()
+        build_server(Settings(open_report=open_report,
+                              restrict_to_data_dir=args.data_only)).run()
         return
 
     # По HTTP адрес сервера публичный, поэтому он читает только папку data/.

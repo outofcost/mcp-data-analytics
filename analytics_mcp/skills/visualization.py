@@ -110,7 +110,7 @@ class VisualizationSkill(Skill):
         выбирается по имени колонки (выручка, продажи, сумма), иначе это
         первая числовая колонка.
         """
-        dataset = self.store.get(dataset_id)
+        dataset = self.store.current(dataset_id)
         roles = dataset.roles
         dates = cols.columns_with_role(roles, cols.DATE)
         numbers = cols.columns_with_role(roles, cols.NUMBER)
@@ -178,7 +178,7 @@ class VisualizationSkill(Skill):
         Возвращает текст (период, сумма, максимум, минимум, изменение
         последнего периода к первому) и картинку PNG.
         """
-        dataset = self.store.get(dataset_id)
+        dataset = self.store.current(dataset_id)
         self._column(dataset, x_col, cols.DATE, "x_col")
         self._column(dataset, y_col, cols.NUMBER, "y_col")
         if group_col:
@@ -271,7 +271,7 @@ class VisualizationSkill(Skill):
         категории: крупнейшие значения с долями, отрицательные суммы)
         и картинку PNG.
         """
-        dataset = self.store.get(dataset_id)
+        dataset = self.store.current(dataset_id)
         roles = dataset.roles
         frame, excluded = dataset.working_frame()
         if roles.get(col) == cols.NUMBER:
@@ -389,7 +389,7 @@ class VisualizationSkill(Skill):
         коэффициент Пирсона) и картинку PNG. Нужны минимум две числовые
         колонки.
         """
-        dataset = self.store.get(dataset_id)
+        dataset = self.store.current(dataset_id)
         numbers = cols.columns_with_role(dataset.roles, cols.NUMBER)
         if len(numbers) < 2:
             raise ToolError(
@@ -406,7 +406,12 @@ class VisualizationSkill(Skill):
                             vmax=1)
         axes.grid(False)
         axes.spines[["left", "bottom"]].set_visible(False)
-        axes.set_xticks(range(len(labels)), labels)
+        # При пяти колонках и больше подписи снизу слипаются, поэтому
+        # идут с наклоном.
+        crowded = len(labels) > 4
+        axes.set_xticks(range(len(labels)), labels,
+                        rotation=30 if crowded else 0,
+                        ha="right" if crowded else "center")
         axes.set_yticks(range(len(labels)), labels)
         for row in range(len(numbers)):
             for column in range(len(numbers)):

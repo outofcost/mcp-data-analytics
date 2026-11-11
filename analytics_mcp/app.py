@@ -18,7 +18,8 @@ SERVER_NAME = "analytics"
 def build_server(settings: Settings | None = None) -> MCPServer:
     """Создаёт сервер: находит скиллы и регистрирует их инструменты."""
     settings = settings or Settings()
-    store = DatasetStore()
+    # Сервер, доступный снаружи, выдаёт таблицам неугадываемые имена.
+    store = DatasetStore(private_ids=settings.restrict_to_data_dir)
     workflow = Workflow()
     workflow.skills = [skill_class(store, settings, workflow)
                        for skill_class in discover_skills()]

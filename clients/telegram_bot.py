@@ -28,11 +28,16 @@ from pathlib import Path
 
 import httpx2
 
-from console_client import REPO_ROOT, error_text, load_env, run_analysis
+from console_client import (DEFAULT_SERVER, REPO_ROOT, error_text, load_env,
+                            run_analysis)
 
 TELEGRAM_API = "https://api.telegram.org"
 UPLOAD_DIR = REPO_ROOT / "data" / "uploads"
-ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
+# Те же расширения, что читает сервер (analytics_mcp/skills/loading.py).
+ALLOWED_EXTENSIONS = {".csv", ".tsv", ".txt", ".xlsx", ".xlsm"}
+# Запросы боту пишут посторонние люди, поэтому сервер под ним читает файлы
+# только из своей папки data/: туда же бот кладёт присланные файлы.
+BOT_SERVER = [*DEFAULT_SERVER, "--data-only"]
 MAX_FILE_BYTES = 20 * 1024 * 1024   # файлы крупнее Bot API боту не отдаёт
 MESSAGE_LIMIT = 4000                # предел Telegram: 4096 символов
 POLL_SECONDS = 30                   # сколько Telegram держит запрос открытым
@@ -103,7 +108,7 @@ class TelegramBot:
                  allowed_chats: set[int] | None = None) -> None:
         """Запоминает токен, команду запуска MCP-сервера и список чатов."""
         self.token = token
-        self.server_command = server_command
+        self.server_command = server_command or BOT_SERVER
         self.allowed_chats = allowed_chats or set()
         self.last_file: dict[int, Path] = {}   # чат → последний файл
         self.http = httpx2.AsyncClient(
@@ -208,7 +213,7 @@ class TelegramBot:
         if Path(name).suffix.lower() not in ALLOWED_EXTENSIONS:
             raise ValueError(
                 f"Файл «{name}» не подходит. Пришлите CSV или Excel "
-                "(.csv, .xlsx, .xls)."
+                "(.csv, .tsv, .txt, .xlsx, .xlsm)."
             )
         if document.get("file_size", 0) > MAX_FILE_BYTES:
             raise ValueError(
@@ -321,7 +326,7 @@ def main() -> None:
     )
     parser.add_argument("--server", default=None,
                         help='команда запуска сервера, по умолчанию '
-                             '"python server.py"')
+                             '"python server.py --data-only"')
     args = parser.parse_args()
 
     load_env()
