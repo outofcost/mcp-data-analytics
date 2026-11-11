@@ -1,7 +1,10 @@
 """Чистые функции клиентов: то, что проверяется без сети и модели."""
 
+import asyncio
 import sys
 from pathlib import Path
+
+import httpx2
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "clients"))
@@ -60,3 +63,26 @@ def test_report_files_are_found_in_tool_answer(tmp_path, monkeypatch):
               '"pdf_path": "output/x/report.pdf"}')
     assert console_client.find_report_files(answer) == [
         folder / "report.pdf"]
+
+
+def test_model_request_is_repeated_after_rate_limit(monkeypatch):
+    """Отказ 429 клиент повторяет, постоянную ошибку возвращает сразу."""
+    monkeypatch.setattr(console_client, "RETRY_PAUSE", 0)
+    answers = [429, 429, 200]
+    calls = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        calls.append(request.url.path)
+        code = answers[len(calls) - 1]
+        body = {"choices": [{"message": {"content": "ок"}}]}
+        return httpx2.Response(code, json=body if code == 200 else {})
+
+    async def ask() -> dict:
+        async with httpx2.AsyncClient(
+                base_url="https://example.test",
+                transport=httpx2.MockTransport(handler)) as http:
+            return await console_client.ask_model(http, "model", [], [])
+
+    data = asyncio.run(ask())
+    assert data["choices"][0]["message"]["content"] == "ок"
+    assert len(calls) == 3

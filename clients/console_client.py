@@ -35,6 +35,8 @@ DEFAULT_SERVER = ["python", "server.py"]
 DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash"
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 MAX_STEPS = 20          # предел запросов к модели за один анализ
+RETRIES = 2             # повторов запроса при временном отказе провайдера
+RETRY_PAUSE = 5         # секунд между повторами
 PREVIEW_CHARS = 300     # сколько символов ответа инструмента идёт в журнал
 REPORT_FILE = re.compile(r"[^\s\"'«»()]+\.(?:md|pdf|html)\b")
 
@@ -147,11 +149,22 @@ def write_log(log_path: Path, record: dict) -> None:
 
 async def ask_model(http: httpx2.AsyncClient, model: str, messages: list[dict],
                     tools: list[dict]) -> dict:
-    """Отправляет диалог и инструменты модели, возвращает разобранный ответ."""
-    response = await http.post(
-        "/chat/completions",
-        json={"model": model, "messages": messages, "tools": tools},
-    )
+    """Отправляет диалог и инструменты модели, возвращает разобранный ответ.
+
+    Временный отказ провайдера (429 и ошибки 5xx) повторяет после паузы.
+    Анализ это цепочка из десятка запросов, и без повтора один отказ
+    срывал её целиком: так было на сравнении моделей.
+    """
+    for attempt in range(RETRIES + 1):
+        response = await http.post(
+            "/chat/completions",
+            json={"model": model, "messages": messages, "tools": tools},
+        )
+        temporary = (response.status_code == 429
+                     or response.status_code >= 500)
+        if not temporary or attempt == RETRIES:
+            break
+        await asyncio.sleep(RETRY_PAUSE)
     if response.status_code != 200:
         raise RuntimeError(
             f"API модели ответил {response.status_code}: {response.text[:300]}"
