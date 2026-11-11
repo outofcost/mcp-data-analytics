@@ -30,6 +30,7 @@ def add_report_route(server: MCPServer, settings: Settings) -> None:
     """
     @server.custom_route("/reports/{key}/report.pdf", methods=["GET"])
     async def report(request: Request) -> Response:
+        """Отдаёт PDF по ключу из адреса или отвечает 404."""
         path = settings.report_links.get(request.path_params["key"])
         if path is None:
             return PlainTextResponse("Отчёт не найден", status_code=404)

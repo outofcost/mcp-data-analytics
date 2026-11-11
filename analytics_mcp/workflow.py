@@ -27,6 +27,7 @@ class Workflow:
     """Собирает порядок шагов из зарегистрированных скиллов."""
 
     def __init__(self) -> None:
+        """Начинает с пустого списка: скиллы добавляет сборка сервера."""
         self.skills: list["Skill"] = []
 
     def next_step(self, analysis: Analysis) -> str:

@@ -29,6 +29,7 @@ def tool(method: Callable[..., Any] | None = None, *,
     показывается пользователю в клиенте вместо имени функции.
     """
     def mark(function: Callable[..., Any]) -> Callable[..., Any]:
+        """Ставит на функцию признак инструмента и название."""
         function.is_tool = True
         function.title = title
         return function
@@ -56,6 +57,7 @@ class Skill:
 
     def __init__(self, store: DatasetStore, settings: Settings,
                  workflow: "Workflow") -> None:
+        """Получает общее хранилище таблиц, настройки и порядок шагов."""
         self.store = store
         self.settings = settings
         self.workflow = workflow

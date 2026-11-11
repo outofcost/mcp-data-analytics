@@ -235,6 +235,7 @@ class VisualizationSkill(Skill):
             FuncFormatter(lambda value, _: format_number(value)))
 
         def name_of(period: pd.Period) -> str:
+            """Пишет период одной строкой для текста под графиком."""
             return period_label(period, freq).replace("\n", " ")
 
         # Сравнения последнего периода с первым здесь нет: при сезонных
