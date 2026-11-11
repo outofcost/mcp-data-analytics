@@ -42,6 +42,9 @@ class LoadResult(BaseModel):
         description="Что стоит уточнить у пользователя до анализа. "
                     "Пустой список: уточнять нечего")
     preview: list[dict[str, str]] = Field(description="Первые три строки")
+    plan: str = Field(
+        description="Порядок этапов анализа и правила работы: тот же "
+                    "текст, что в инструкции сервера")
     next_step: str = Field(description=NEXT_STEP)
 
 

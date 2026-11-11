@@ -244,6 +244,9 @@ class DataLoadingSkill(Skill):
             preview=[{name: format_value(value)
                       for name, value in row.items()}
                      for row in frame.head(3).to_dict("records")],
+            # Не каждый клиент передаёт модели instructions сервера,
+            # поэтому порядок анализа приходит и в первом ответе.
+            plan=self.workflow.instructions(),
             next_step=self.next_step(dataset),
         )
 

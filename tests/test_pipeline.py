@@ -95,6 +95,9 @@ def test_next_step_leads_through_stages_in_order(tmp_path):
         reply = (await session.call("load_data",
                                     file_path="sales_data.csv")).data
         raw_id = reply["dataset_id"]
+        # Порядок анализа приходит в первом ответе: не каждый клиент
+        # передаёт модели instructions сервера.
+        assert reply["plan"] == session.client.instructions
         assert "describe_data" in reply["next_step"]
         reply = (await session.call("describe_data", dataset_id=raw_id)).data
         assert "clean_data" in reply["next_step"]

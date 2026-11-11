@@ -132,6 +132,11 @@
             "title": "Preview",
             "type": "array"
           },
+          "plan": {
+            "description": "Порядок этапов анализа и правила работы: тот же текст, что в инструкции сервера",
+            "title": "Plan",
+            "type": "string"
+          },
           "next_step": {
             "description": "Что вызвать дальше. Выполняйте, пока анализ не завершён",
             "title": "Next Step",
@@ -148,6 +153,7 @@
           "notes",
           "questions",
           "preview",
+          "plan",
           "next_step"
         ],
         "title": "LoadResult",
