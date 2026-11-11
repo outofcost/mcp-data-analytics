@@ -16,10 +16,12 @@ from analytics_mcp.registry import Skill, register_skill, tool
 from analytics_mcp.store import Analysis
 from analytics_mcp.style import format_number
 
-# Выбросом считается значение дальше трёх межквартильных размахов
-# от квартилей. Это граница «грубых» выбросов: обычные большие продажи
-# под неё не попадают.
-OUTLIER_FACTOR = 3.0
+# Выбросы ищутся по межквартильному размаху. Два порога:
+# дальше 3 размахов от квартиля значение подозрительное, его проверяет
+# человек, в расчётах оно остаётся; дальше 6 размахов это грубый выброс
+# (например, лишний ноль), он исключается из расчётов.
+CHECK_FACTOR = 3.0
+EXCLUDE_FACTOR = 6.0
 MIN_ROWS_FOR_OUTLIERS = 8
 FILL_CATEGORY = "Не указано"
 
@@ -89,8 +91,13 @@ def fill_gaps(frame: pd.DataFrame, roles: dict[str, str],
 
 def find_outliers(frame: pd.DataFrame,
                   roles: dict[str, str]) -> tuple[pd.Series, list[dict]]:
-    """Ищет грубые выбросы в числовых колонках по межквартильному размаху."""
-    mask = pd.Series(False, index=frame.index)
+    """Ищет выбросы в числовых колонках по межквартильному размаху.
+
+    Returns:
+        Отметка строк с грубыми выбросами и описание находок по колонкам:
+        сколько значений исключается, сколько оставлено на проверку.
+    """
+    extreme = pd.Series(False, index=frame.index)
     found = []
     for name in col.columns_with_role(roles, col.NUMBER):
         values = frame[name].dropna()
@@ -100,24 +107,26 @@ def find_outliers(frame: pd.DataFrame,
         spread = q3 - q1
         if spread == 0:
             continue
-        low, high = q1 - OUTLIER_FACTOR * spread, q3 + OUTLIER_FACTOR * spread
-        outside = (frame[name] < low) | (frame[name] > high)
-        if outside.any():
-            examples = frame.loc[outside, name].sort_values(ascending=False)
+        # Расстояние до ближайшего квартиля в размахах.
+        distance = pd.concat([(q1 - frame[name]) / spread,
+                              (frame[name] - q3) / spread], axis=1).max(axis=1)
+        gross = distance > EXCLUDE_FACTOR
+        doubtful = (distance > CHECK_FACTOR) & ~gross
+        if gross.any() or doubtful.any():
             found.append({
                 "column": name,
-                "count": int(outside.sum()),
-                "lower_bound": round(float(low), 2),
-                "upper_bound": round(float(high), 2),
-                "examples": [round(float(v), 2) for v in examples.head(3)],
-                # Во сколько раз пример больше верхней границы: помогает
-                # отличить опечатку от просто крупного значения.
-                "examples_times_upper_bound": [
-                    round(float(v / high), 1) for v in examples.head(3)
-                ] if high > 0 else [],
+                "typical_range": [round(float(q1), 2), round(float(q3), 2)],
+                "gross_outliers": int(gross.sum()),
+                "gross_examples": sorted(
+                    (round(float(v), 2) for v in frame.loc[gross, name]),
+                    reverse=True)[:3],
+                "to_check": int(doubtful.sum()),
+                "to_check_examples": sorted(
+                    (round(float(v), 2) for v in frame.loc[doubtful, name]),
+                    reverse=True)[:3],
             })
-            mask |= outside
-    return mask, found
+            extreme |= gross
+    return extreme, found
 
 
 @register_skill
@@ -151,16 +160,19 @@ class DataCleaningSkill(Skill):
                         "без даты; drop удаляет строки с пропусками; none "
                         "оставляет как есть")] = "auto",
         outliers: Annotated[Literal["flag", "remove", "none"], Field(
-            description="Выбросы: flag помечает строки и исключает их из "
-                        "графиков и итогов, строки остаются в таблице; "
-                        "remove удаляет строки; none не ищет выбросы")
+            description="Грубые выбросы: flag помечает строки и исключает "
+                        "их из графиков и итогов, строки остаются в "
+                        "таблице; remove удаляет строки; none не ищет "
+                        "выбросы")
         ] = "flag",
     ) -> CleanResult:
         """Чистит таблицу и сообщает, что именно сделано, с числами.
 
         Удаляет пустые колонки и дубликаты, приводит написание категорий
-        к одному виду, обрабатывает пропуски, ищет грубые выбросы (дальше
-        трёх межквартильных размахов от квартилей). Исходная таблица не
+        к одному виду, обрабатывает пропуски, ищет выбросы. Значение дальше
+        6 межквартильных размахов от квартиля считается грубым выбросом и
+        исключается из расчётов. Значение дальше 3 размахов остаётся в
+        расчётах и передаётся человеку на проверку. Исходная таблица не
         меняется: результат сохраняется под новым dataset_id.
         """
         dataset = self.store.get(dataset_id)
@@ -198,19 +210,25 @@ class DataCleaningSkill(Skill):
             count = int(mask.sum())
             if count and outliers == "remove":
                 frame = frame[~mask]
-                actions.append(f"удалил строки с выбросами: {count}")
+                actions.append(f"удалил строки с грубыми выбросами: {count}")
             elif count:
                 frame[col.OUTLIER_COLUMN] = mask
                 roles[col.OUTLIER_COLUMN] = col.FLAG
                 actions.append(
-                    f"пометил строки с выбросами: {count}. Они остались в "
-                    f"таблице (колонка {col.OUTLIER_COLUMN}), но в графики "
-                    "и итоги не входят")
+                    f"пометил строки с грубыми выбросами: {count}. Они "
+                    f"остались в таблице (колонка {col.OUTLIER_COLUMN}), "
+                    "но в графики и итоги не входят")
                 untouched.append(
-                    "Выбросы помечены, решение за человеком: это ошибка "
-                    "ввода или настоящие значения. clean_data с "
-                    "outliers=\"remove\" удалит строки, с outliers=\"none\" "
-                    "вернёт их в расчёт.")
+                    "Грубые выбросы помечены, строки не удалены. clean_data "
+                    "с outliers=\"remove\" удалит их, с outliers=\"none\" "
+                    "вернёт в расчёт.")
+            to_check = sum(item["to_check"] for item in found)
+            if to_check:
+                untouched.append(
+                    f"Подозрительных значений: {to_check}. Они чуть дальше "
+                    "обычного разброса, остались в расчётах. Покажите их "
+                    "пользователю: это может быть и ошибка, и настоящий "
+                    "пик.")
 
         if not actions:
             actions.append("дубликатов, пропусков и выбросов не нашёл, "

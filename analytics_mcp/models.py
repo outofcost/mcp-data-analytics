@@ -74,8 +74,9 @@ class CleanResult(BaseModel):
         description="Что сделано, с числами: сколько строк удалено, "
                     "сколько пропусков заполнено и чем")
     outliers: list[dict[str, Any]] = Field(
-        description="Найденные выбросы по колонкам: сколько, границы, "
-                    "примеры значений")
+        description="Выбросы по колонкам: обычный диапазон, сколько "
+                    "грубых (исключены из расчётов) и сколько "
+                    "подозрительных (оставлены на проверку), примеры")
     untouched: list[str] = Field(
         description="Что очистка намеренно оставила человеку")
     next_step: str = Field(description=NEXT_STEP)

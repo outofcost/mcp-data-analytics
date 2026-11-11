@@ -49,7 +49,6 @@ REGIONS = {
 # Закономерность 1: множитель по месяцам, декабрь заметно выше остальных.
 SEASON = {1: 0.80, 2: 0.85, 3: 0.95, 4: 1.00, 5: 1.00, 6: 0.95,
           7: 0.90, 8: 0.95, 9: 1.00, 10: 1.05, 11: 1.20, 12: 1.60}
-MONTHS = [(year, month) for year in (2023, 2024) for month in range(1, 13)]
 ROWS_PER_MONTH = 8
 
 
@@ -61,37 +60,36 @@ def days_in_month(year: int, month: int) -> int:
 
 def build_sales(rng: random.Random) -> list[dict]:
     """Строит чистые записи продаж с тремя заложенными закономерностями."""
-    product_cycle: list[str] = []
     rows = []
-    for index, (year, month) in enumerate(MONTHS):
-        progress = index / (len(MONTHS) - 1)
-        # В каждом месяце каждый регион встречается одинаковое число раз,
-        # товары идут по перемешанному кругу: так закономерности не тонут
-        # в случайном составе записей.
-        regions = list(REGIONS) * (ROWS_PER_MONTH // len(REGIONS))
-        rng.shuffle(regions)
-        for region in regions:
-            if not product_cycle:
-                product_cycle = list(PRODUCTS)
-                rng.shuffle(product_cycle)
-            product = product_cycle.pop()
-            price, typical_sales, margin = PRODUCTS[product]
-            start, end = REGIONS[region]
-            region_factor = start + (end - start) * progress
-            sales = (typical_sales * region_factor * SEASON[month]
-                     * rng.uniform(0.9, 1.1))
-            quantity = max(1, round(sales / price))
-            sales = round(quantity * price * rng.uniform(0.97, 1.03), -1)
-            profit = round(sales * (margin + rng.uniform(-0.02, 0.02)))
-            day = rng.randint(1, days_in_month(year, month))
-            rows.append({
-                "Date": date(year, month, day).isoformat(),
-                "Product": product,
-                "Region": region,
-                "Sales": int(sales),
-                "Quantity": quantity,
-                "Profit": profit,
-            })
+    per_region = ROWS_PER_MONTH // len(REGIONS)
+    for year in (2023, 2024):
+        # У каждого региона за год одинаковый набор товаров: каждый товар
+        # встречается одинаковое число раз. Так рост региона не путается
+        # с тем, какие товары случайно в него попали.
+        repeats = 12 * per_region // len(PRODUCTS)
+        mix = {region: rng.sample(list(PRODUCTS) * repeats,
+                                  12 * per_region) for region in REGIONS}
+        for month in range(1, 13):
+            progress = ((year - 2023) * 12 + month - 1) / 23
+            for region in list(REGIONS) * per_region:
+                product = mix[region].pop()
+                price, typical_sales, margin = PRODUCTS[product]
+                start, end = REGIONS[region]
+                region_factor = start + (end - start) * progress
+                sales = (typical_sales * region_factor * SEASON[month]
+                         * rng.uniform(0.9, 1.1))
+                quantity = max(1, round(sales / price))
+                sales = round(quantity * price * rng.uniform(0.97, 1.03), -1)
+                profit = round(sales * (margin + rng.uniform(-0.02, 0.02)))
+                day = rng.randint(1, days_in_month(year, month))
+                rows.append({
+                    "Date": date(year, month, day).isoformat(),
+                    "Product": product,
+                    "Region": region,
+                    "Sales": int(sales),
+                    "Quantity": quantity,
+                    "Profit": profit,
+                })
     rows.sort(key=lambda row: row["Date"])
     return rows
 
@@ -99,15 +97,18 @@ def build_sales(rng: random.Random) -> list[dict]:
 def add_dirt(rows: list[dict], rng: random.Random) -> list[dict]:
     """Добавляет пропуски, дубликаты и выбросы, чтобы было что чистить."""
     rows = [dict(row) for row in rows]
-    spoiled = rng.sample(range(len(rows)), 11)
+    spoiled = rng.sample(range(len(rows)), 9)
     for index in spoiled[:4]:
         rows[index]["Quantity"] = ""
     for index in spoiled[4:7]:
         rows[index]["Profit"] = ""
     for index in spoiled[7:9]:
         rows[index]["Region"] = ""
-    for index in spoiled[9:11]:
-        rows[index]["Sales"] *= 10  # опечатка: лишний ноль в выручке
+    # Опечатка «лишний ноль» в двух записях с обычной выручкой.
+    ordinary = [index for index, row in enumerate(rows)
+                if 35_000 <= row["Sales"] <= 60_000 and index not in spoiled]
+    for index in rng.sample(ordinary, 2):
+        rows[index]["Sales"] *= 10
     for index in rng.sample(range(len(rows)), 3):
         rows.insert(index, dict(rows[index]))  # точный дубликат строки
     return rows

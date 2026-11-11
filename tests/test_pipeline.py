@@ -121,23 +121,25 @@ def test_next_step_leads_through_stages_in_order(tmp_path):
 
 
 def test_outliers_are_flagged_and_left_for_a_human(tmp_path):
-    """Выбросы по умолчанию помечаются, остаются в таблице и не считаются."""
+    """Грубые выбросы помечаются и не считаются, спорные остаются."""
     async def scenario(session: Session) -> None:
         raw_id = (await session.call(
             "load_data", file_path="sales_data.csv")).data["dataset_id"]
         flagged = (await session.call("clean_data", dataset_id=raw_id)).data
         assert flagged["rows_after"] == 192
-        assert flagged["outliers"][0]["column"] == "Sales"
-        assert flagged["outliers"][0]["examples"][0] == 575000
+        sales = flagged["outliers"][0]
+        assert sales["column"] == "Sales"
+        # Две опечатки с лишним нулём исключены из расчётов.
+        assert sales["gross_examples"] == [549300, 405700]
         assert flagged["untouched"]
         chart = (await session.call(
             "plot_distribution", dataset_id=flagged["dataset_id"],
             col="Sales")).data
-        assert chart["excluded_outliers"] == flagged["outliers"][0]["count"]
+        assert chart["excluded_outliers"] == 2
 
         removed = (await session.call("clean_data", dataset_id=raw_id,
                                       outliers="remove")).data
-        assert removed["rows_after"] == 192 - flagged["outliers"][0]["count"]
+        assert removed["rows_after"] == 190
         # Повторная очистка сбрасывает графики, построенные до неё.
         assert any("сбросил" in action for action in removed["actions"])
 

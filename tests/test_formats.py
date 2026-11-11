@@ -66,7 +66,7 @@ def test_dirty_excel_with_title_above_header(tmp_path):
         actions = " ".join(cleaned["actions"])
         assert "привёл к одному написанию" in actions
         assert "удалил полные дубликаты строк: 4" in actions
-        assert cleaned["outliers"][0]["examples"][0] == 1250000
+        assert cleaned["outliers"][0]["gross_examples"] == [1250000]
 
     run(tmp_path, scenario)
 
