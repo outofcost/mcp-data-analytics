@@ -175,8 +175,8 @@ class VisualizationSkill(Skill):
     ) -> list[str | Image]:
         """Строит график тренда: сумма показателя по периодам времени.
 
-        Возвращает текст (период, сумма, максимум, минимум, изменение
-        последнего периода к первому) и картинку PNG.
+        Возвращает текст (период, сумма, максимум, минимум) и картинку
+        PNG.
         """
         dataset = self.store.current(dataset_id)
         self._column(dataset, x_col, cols.DATE, "x_col")
@@ -237,7 +237,9 @@ class VisualizationSkill(Skill):
         def name_of(period: pd.Period) -> str:
             return period_label(period, freq).replace("\n", " ")
 
-        first, last = total.iloc[0], total.iloc[-1]
+        # Сравнения последнего периода с первым здесь нет: при сезонных
+        # продажах оно показывает сезон (декабрь против января), а модель
+        # выдаёт его за рост.
         facts = [
             f"Период: с {name_of(total.index[0])} по "
             f"{name_of(total.index[-1])}, точек: {len(total)}.",
@@ -246,8 +248,6 @@ class VisualizationSkill(Skill):
             f"{format_number(total.max())}.",
             f"Минимум: {name_of(total.idxmin())}, "
             f"{format_number(total.min())}.",
-            f"Изменение последнего периода к первому: "
-            f"{percent(last - first, first, signed=True)}.",
         ]
         key = f"plot_trend:{x_col}:{y_col}:{freq}:{group_col}"
         return publish_chart(self, dataset, key, title, figure, facts,

@@ -69,8 +69,6 @@ def time_facts(data: pd.DataFrame, date_col: str,
                              "значение": rounded(monthly.max())},
             "худший_месяц": {"месяц": month_name(monthly.idxmin()),
                              "значение": rounded(monthly.min())},
-            "последний_месяц_к_первому_процент": change_percent(
-                monthly.iloc[-1], monthly.iloc[0]),
         }
     # Сезонность видна только на двух полных годах: по одному году её
     # не отличить от разового события.
