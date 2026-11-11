@@ -28,7 +28,7 @@
 - Отчёт в двух видах: Markdown и PDF одним файлом с графиками внутри.
 - Чужой файл: Excel с шапкой над таблицей, разделитель `;`, кодировка Windows-1251, даты в русском и американском порядке, строки «Итого».
 - Датасет Superstore, названный в задании: 9994 строки, итоги сервера совпали с прямым подсчётом в pandas (продажи 2 297 201, прибыль 286 397). Сам файл в репозиторий я не клал.
-- 42 теста проходят, `flake8` не находит замечаний (запуск 11 ноября 2026, Python 3.12.4, macOS).
+- 52 теста проходят, `flake8` не находит замечаний (запуск 11 ноября 2026, Python 3.12.4, macOS).
 
 Не работает или не проверено:
 
@@ -49,7 +49,7 @@ python3 -m venv .venv
 .venv/bin/python -m pytest -q
 ```
 
-Последняя команда должна напечатать `42 passed`. На Windows вместо `.venv/bin/` пишется `.venv\Scripts\`.
+Последняя команда должна напечатать `52 passed`. На Windows вместо `.venv/bin/` пишется `.venv\Scripts\`.
 
 Стиль кода проверяет `.venv/bin/flake8 .`. Спецификацию инструментов обновляет `scripts/export_tools_schema.py`, тестовые данные заново создаёт `data/generate_data.py`.
 
@@ -147,19 +147,21 @@ cp .env.example .env
 
 ## Что получается на выходе
 
-Запуск консольного клиента на `data/sales_data.csv`, 11 ноября 2026. Модель сделала 11 вызовов за 8 запросов, запуск стоил 0,006 доллара (журнал `examples/console/console-log.txt`):
+Запуск консольного клиента на `data/sales_data.csv`, 11 ноября 2026. Модель сделала 10 вызовов за 8 запросов, запуск стоил 0,003 доллара (журнал `examples/console/console-log.txt`):
 
 ```
 load_data → describe_data → clean_data → suggest_charts
 → plot_trend → plot_distribution → plot_distribution → correlation_analysis
-→ collect_findings → abc_analysis → save_report
+→ collect_findings → save_report
 ```
 
 Очистка в этом запуске: удалено 3 дубликата, заполнено 9 пропусков, 2 продажи с лишним нулём исключены из расчётов.
 
 ![Продажи по месяцам](examples/report-sales/chart_01_plot_trend.png)
 
-![ABC-анализ по товарам](examples/report-sales/chart_05_abc_analysis.png)
+Первая страница PDF: числа, выводы и рекомендации идут раньше графиков.
+
+<img src="examples/report-sales/report-page-1.png" alt="Первая страница отчёта" width="520">
 
 Отчёт целиком: [report.md](examples/report-sales/report.md) и [report.pdf](examples/report-sales/report.pdf). Отчёт по «грязной» выгрузке Excel: [report.md](examples/report-orders/report.md). Остальные материалы описаны в [examples/README.md](examples/README.md).
 
@@ -179,7 +181,7 @@ load_data → describe_data → clean_data → suggest_charts
 | `correlation_analysis` | `dataset_id` | Строит матрицу корреляций |
 | `abc_analysis` | `dataset_id`, `col`, `value_col?` | Делит значения колонки на группы A, B и C по вкладу в сумму |
 | `collect_findings` | `dataset_id` | Считает цифры, по которым модель пишет выводы |
-| `save_report` | `dataset_id`, `title`, `conclusions`, `recommendations` | Собирает отчёт в Markdown и PDF |
+| `save_report` | `dataset_id`, `title`, `conclusions`, `recommendations` | Проверяет форму выводов, собирает отчёт в Markdown и PDF, возвращает короткий ответ для чата |
 
 Знак `?` стоит у необязательных аргументов. Полная спецификация со схемами ответов лежит в [docs/tools-schema.json](docs/tools-schema.json): это выгрузка из работающего сервера, её делает `scripts/export_tools_schema.py`.
 
@@ -194,6 +196,8 @@ load_data → describe_data → clean_data → suggest_charts
 Таблица лежит в памяти сервера. Модель получает короткий `dataset_id` и передаёт его в остальные инструменты. Очистка исходную таблицу не меняет и выдаёт новый `dataset_id`.
 
 Цифры считает код, текст пишет модель. `collect_findings` отдаёт числа, модель формулирует по ним выводы, `save_report` собирает отчёт.
+
+Форму отчёта задаёт сервер. Вывод это фраза до восьми слов и пояснение с цифрой, выводов от трёх до пяти, рекомендаций от двух до четырёх. Если модель нарушила форму, `save_report` возвращает список нарушений, и модель исправляет вызов. Короткий ответ для чата сервер собирает из тех же выводов, поэтому в консоли и в Telegram текст одинаковый.
 
 Новый скилл добавляется одним файлом в `analytics_mcp/skills/`. Пример в истории: коммит `7a21324` добавил ABC-анализ, в его диффе один новый файл.
 
@@ -242,7 +246,7 @@ load_data → describe_data → clean_data → suggest_charts
 - Часть чужих файлов читается неверно: числа вида `$4,000.00`, кодировка UTF-16, формат `.xls`, файл без заголовка.
 - Бот обрабатывает сообщения по одному и помнит последний файл чата до своего перезапуска.
 
-Полный список из 19 пунктов лежит в [docs/limitations.md](docs/limitations.md).
+Полный список (21 пункт) лежит в [docs/limitations.md](docs/limitations.md).
 
 Что бы я доделал, по убыванию пользы:
 
