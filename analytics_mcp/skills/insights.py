@@ -138,11 +138,6 @@ def category_facts(data: pd.DataFrame, name: str, measure: str,
     return facts
 
 
-def is_number(value: Any) -> bool:
-    """Отвечает, число ли это (логическое значение числом не считается)."""
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
-
-
 def render(value: Any, depth: int = 0) -> list[str]:
     """Превращает вложенные цифры в список Markdown для отчёта."""
     pad = "  " * depth
@@ -155,7 +150,8 @@ def render(value: Any, depth: int = 0) -> list[str]:
                 lines += render(item, depth + 1)
             else:
                 shown = ("нет данных" if item is None
-                         else format_number(item) if is_number(item)
+                         else format_number(item)
+                         if isinstance(item, (int, float))
                          else item)
                 lines.append(f"{pad}- {name}: {shown}")
     elif isinstance(value, list):
@@ -382,7 +378,7 @@ class InsightGenerationSkill(Skill):
         # Короткий ответ для чата собирает сервер, а не модель: так он
         # одинаков в любом клиенте.
         summary = rep.chat_summary(
-            report, analysis.extra.get("cleaning_counts"),
+            report, analysis.cleaning_counts,
             report_url or self.settings.relative(pdf_path), pages)
         return ReportResult(
             dataset_id=dataset_id,

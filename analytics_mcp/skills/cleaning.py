@@ -25,9 +25,6 @@ CHECK_FACTOR = 3.0
 EXCLUDE_FACTOR = 6.0
 MIN_ROWS_FOR_OUTLIERS = 8
 FILL_CATEGORY = "Не указано"
-# Под этим ключом очистка оставляет свои счётчики для короткого ответа
-# в чат: сколько дубликатов удалено, сколько пропусков заполнено.
-COUNTS_KEY = "cleaning_counts"
 
 
 def normalize_text(frame: pd.DataFrame, roles: dict[str, str],
@@ -274,7 +271,7 @@ class DataCleaningSkill(Skill):
                                   roles, "clean")
         analysis.clean_id = clean.dataset_id
         analysis.cleaning_log = list(actions)
-        analysis.extra[COUNTS_KEY] = dict(counts)
+        analysis.cleaning_counts = dict(counts)
         return CleanResult(
             dataset_id=clean.dataset_id,
             rows_before=rows_before,
