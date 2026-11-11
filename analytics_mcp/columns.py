@@ -202,6 +202,10 @@ def infer_column(name: str,
     # Почти пустая колонка (например, редкие комментарии) это не категория.
     if len(filled) < 0.1 * len(series):
         return text, TEXT, "", ""
+    # Колонка с единственным значением («Country: United States») разреза
+    # не даёт: сравнивать в ней нечего.
+    if unique == 1 and len(filled) > 1:
+        return text, TEXT, "", ""
     if unique <= MAX_CATEGORIES and unique <= max(2, len(filled) // 2):
         return text, CATEGORY, "", ""
     return text, TEXT, "", ""

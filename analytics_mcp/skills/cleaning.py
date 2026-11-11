@@ -22,6 +22,13 @@ from analytics_mcp.style import format_number
 # (например, лишний ноль), он исключается из расчётов.
 CHECK_FACTOR = 3.0
 EXCLUDE_FACTOR = 6.0
+# Исключается только то, что похоже на ошибку ввода: таких значений мало,
+# и они стоят особняком. У продаж с длинным хвостом (много мелких заказов
+# и редкие крупные) за порогом лежат сотни настоящих строк подряд, без
+# разрыва: это свойство данных, их сервер оставляет в расчёте.
+MAX_OUTLIER_SHARE = 0.02    # не больше 2% строк колонки
+MAX_OUTLIERS_SMALL = 2      # в маленькой таблице: не больше двух значений
+GAP_FACTOR = 3.0            # разрыв с остальными значениями, в размахах
 MIN_ROWS_FOR_OUTLIERS = 8
 FILL_CATEGORY = "Не указано"
 
@@ -89,15 +96,22 @@ def fill_gaps(frame: pd.DataFrame, roles: dict[str, str],
     return frame, actions, untouched
 
 
-def find_outliers(frame: pd.DataFrame,
-                  roles: dict[str, str]) -> tuple[pd.Series, list[dict]]:
+def find_outliers(frame: pd.DataFrame, roles: dict[str, str]
+                  ) -> tuple[pd.Series, pd.Series, list[dict]]:
     """Ищет выбросы в числовых колонках по межквартильному размаху.
 
+    Значения дальше 6 размахов исключаются, только если их мало и они
+    стоят особняком: так выглядит ошибка ввода. Если таких значений много
+    или они идут сплошным хвостом, это длинный хвост распределения, строки
+    остаются в расчёте.
+
     Returns:
-        Отметка строк с грубыми выбросами и описание находок по колонкам:
-        сколько значений исключается, сколько оставлено на проверку.
+        Отметка строк с грубыми выбросами, отметка строк длинного хвоста
+        и описание находок по колонкам: сколько значений исключается,
+        сколько оставлено в расчёте и сколько передано на проверку.
     """
     extreme = pd.Series(False, index=frame.index)
+    long_tail = pd.Series(False, index=frame.index)
     found = []
     for name in col.columns_with_role(roles, col.NUMBER):
         values = frame[name].dropna()
@@ -110,9 +124,22 @@ def find_outliers(frame: pd.DataFrame,
         # Расстояние до ближайшего квартиля в размахах.
         distance = pd.concat([(q1 - frame[name]) / spread,
                               (frame[name] - q3) / spread], axis=1).max(axis=1)
-        gross = distance > EXCLUDE_FACTOR
-        doubtful = (distance > CHECK_FACTOR) & ~gross
-        if gross.any() or doubtful.any():
+        beyond = distance > EXCLUDE_FACTOR
+        doubtful = (distance > CHECK_FACTOR) & ~beyond
+        # Ошибка ввода редкая и стоит особняком: между ней и самым дальним
+        # обычным значением есть разрыв.
+        few = max(MAX_OUTLIERS_SMALL, MAX_OUTLIER_SHARE * len(values))
+        gap = distance[beyond].min() - distance[~beyond].max()
+        isolated = bool(beyond.any() and beyond.sum() <= few
+                        and gap >= GAP_FACTOR)
+        gross = beyond if isolated else beyond & False
+        tail = beyond & ~gross
+        # Человеку на проверку идут только редкие подозрительные значения.
+        # Когда их сотни, это тот же длинный хвост.
+        if doubtful.sum() > few or tail.any():
+            doubtful = doubtful & False
+        if gross.any() or tail.any() or doubtful.any():
+            total = values.sum()
             found.append({
                 "column": name,
                 "typical_range": [round(float(q1), 2), round(float(q3), 2)],
@@ -120,13 +147,18 @@ def find_outliers(frame: pd.DataFrame,
                 "gross_examples": sorted(
                     (round(float(v), 2) for v in frame.loc[gross, name]),
                     reverse=True)[:3],
+                "long_tail": int(tail.sum()),
+                "long_tail_share_of_sum": (
+                    round(100 * float(frame.loc[tail, name].sum() / total), 1)
+                    if tail.any() and total else 0.0),
                 "to_check": int(doubtful.sum()),
                 "to_check_examples": sorted(
                     (round(float(v), 2) for v in frame.loc[doubtful, name]),
                     reverse=True)[:3],
             })
             extreme |= gross
-    return extreme, found
+            long_tail |= tail
+    return extreme, long_tail, found
 
 
 @register_skill
@@ -164,10 +196,11 @@ class DataCleaningSkill(Skill):
                         "без даты; drop удаляет строки с пропусками; none "
                         "оставляет как есть")] = "auto",
         outliers: Annotated[Literal["flag", "remove", "none"], Field(
-            description="Грубые выбросы: flag помечает строки и исключает "
-                        "их из графиков и итогов, строки остаются в "
-                        "таблице; remove удаляет строки; none не ищет "
-                        "выбросы")
+            description="Грубые выбросы: flag помечает редкие значения, "
+                        "стоящие особняком, и исключает их из графиков и "
+                        "итогов, строки остаются в таблице; remove удаляет "
+                        "строки со всеми значениями далеко от обычного "
+                        "диапазона; none не ищет выбросы")
         ] = "flag",
     ) -> CleanResult:
         """Чистит таблицу и сообщает, что именно сделано, с числами.
@@ -175,8 +208,12 @@ class DataCleaningSkill(Skill):
         Удаляет пустые колонки и дубликаты, приводит написание категорий
         к одному виду, обрабатывает пропуски, ищет выбросы. Значение дальше
         6 межквартильных размахов от квартиля считается грубым выбросом и
-        исключается из расчётов. Значение дальше 3 размахов остаётся в
-        расчётах и передаётся человеку на проверку. Исходная таблица не
+        исключается из расчётов, если таких значений не больше 2% строк
+        (в маленькой таблице не больше двух) и они стоят особняком: так
+        выглядит ошибка ввода. Длинный хвост из
+        многих крупных значений остаётся в расчётах, о нём сообщается.
+        Значение дальше 3 размахов остаётся в расчётах и передаётся
+        человеку на проверку. Исходная таблица не
         меняется: результат сохраняется под новым dataset_id.
         """
         dataset = self.store.get(dataset_id)
@@ -210,7 +247,26 @@ class DataCleaningSkill(Skill):
 
         found = []
         if outliers != "none":
-            mask, found = find_outliers(frame, roles)
+            mask, tail, found = find_outliers(frame, roles)
+            if outliers == "remove":
+                # Явная просьба удалить относится ко всем значениям за
+                # порогом, в том числе к длинному хвосту.
+                mask = mask | tail
+            else:
+                for item in found:
+                    if item["long_tail"]:
+                        share = format_number(
+                            100 * item["long_tail"] / len(frame))
+                        part = format_number(item["long_tail_share_of_sum"])
+                        untouched.append(
+                            f"В колонке «{item['column']}» значений далеко "
+                            f"от обычного диапазона: {item['long_tail']} "
+                            f"({share}% строк, {part}% суммы). Их много "
+                            "или они идут сплошным хвостом без разрыва: "
+                            "это похоже на свойство данных (редкие крупные "
+                            "значения). Строки остались в расчётах. "
+                            "Покажите это пользователю; clean_data с "
+                            "outliers=\"remove\" удалит их.")
             count = int(mask.sum())
             if count and outliers == "remove":
                 frame = frame[~mask]

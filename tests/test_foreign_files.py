@@ -148,3 +148,9 @@ def test_measure_with_code_word_stays_number():
     assert not columns.is_code("Индекс цен", pd.Series([101.3, 99.8]))
     assert columns.is_code("Год", pd.Series([2023.0, 2024.0]))
     assert columns.is_code("ZipCode", pd.Series([101000.0, 101001.0]))
+
+
+def test_single_value_column_is_not_a_category():
+    """Колонка с одним значением на всю таблицу в разрезы не идёт."""
+    series = pd.Series(["United States"] * 10, dtype="string")
+    assert columns.infer_column("Country", series)[1] == columns.TEXT
