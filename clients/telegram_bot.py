@@ -75,22 +75,23 @@ def split_text(text: str, limit: int = MESSAGE_LIMIT) -> list[str]:
     ]
 
 
+def table_row_to_line(match: re.Match) -> str:
+    """Пишет строку таблицы текстом: первая ячейка, двоеточие, остальные."""
+    first, *rest = [cell.strip() for cell in match.group(1).split("|")]
+    return f"{first}: {'; '.join(rest)}" if rest else first
+
+
 def to_telegram_html(text: str) -> str:
     """Переводит разметку Markdown из ответа модели в HTML для Telegram.
 
     Заголовки (#) и жирный текст (**) становятся жирными. Имена в обратных
     кавычках идут моноширинным шрифтом: иначе Telegram превращает «report.md»
     в ссылку на сайт. Таблиц в Telegram нет, поэтому строка таблицы
-    становится обычной строкой, ячейки разделяются точкой.
+    становится обычной строкой: «Прибыль: 1 776 705».
     """
     text = html.escape(text, quote=False)
     text = TABLE_RULE.sub("", text)
-    text = TABLE_ROW.sub(
-        lambda match: " · ".join(
-            cell.strip() for cell in match.group(1).split("|")
-        ),
-        text,
-    )
+    text = TABLE_ROW.sub(table_row_to_line, text)
     text = re.sub(r"`([^`\n]+)`", r"<code>\1</code>", text)
     text = re.sub(
         r"^#{1,6} +(.+)$",

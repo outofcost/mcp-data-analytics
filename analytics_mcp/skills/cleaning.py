@@ -138,6 +138,10 @@ class DataCleaningSkill(Skill):
     guide = ("Убирает дубликаты, заполняет пропуски, приводит написание "
              "значений к одному виду, помечает выбросы. Сообщает, что "
              "сделано, с числами.")
+    rules = (
+        "После очистки работай с новым dataset_id из ответа clean_data: "
+        "по исходной таблице графики и итоги больше не считаются.",
+    )
 
     def is_done(self, analysis: Analysis) -> bool:
         """Этап выполнен, когда появилась очищенная таблица."""
@@ -237,8 +241,9 @@ class DataCleaningSkill(Skill):
                 ("дубликатов", drop_duplicates),
                 ("пропусков", fill_missing != "none"),
                 ("выбросов", outliers != "none")) if enabled]
-            found_nothing = (f"{', '.join(checked)} не нашёл, "
-                             if checked else "")
+            listed = " и ".join(
+                filter(None, [", ".join(checked[:-1]), *checked[-1:]]))
+            found_nothing = f"{listed} не нашёл, " if checked else ""
             actions.append(f"{found_nothing}таблица не менялась")
         if analysis.charts or analysis.findings:
             analysis.charts, analysis.findings = [], None

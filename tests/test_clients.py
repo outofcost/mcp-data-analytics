@@ -37,8 +37,8 @@ def test_markdown_becomes_telegram_markup():
     assert telegram_bot.to_telegram_html(text).splitlines() == [
         "<b>Итог</b>",
         "Отчёт: <code>output/x/report.md</code>, <b>рост</b> 2 &lt; 3",
-        "Показатель · Значение",
-        "Прибыль · 1 776 705",
+        "Показатель: Значение",
+        "Прибыль: 1 776 705",
     ]
 
 

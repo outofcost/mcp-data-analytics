@@ -44,11 +44,15 @@ class Skill:
             порядок шагов анализа.
         title: короткое название этапа.
         guide: что делает этап. Текст попадает в инструкцию сервера.
+        rules: правила для модели, которые касаются инструментов этого
+            скилла. Тоже попадают в инструкцию: так ядро не называет
+            инструменты по именам.
     """
 
     stage: int = 0
     title: str = ""
     guide: str = ""
+    rules: tuple[str, ...] = ()
 
     def __init__(self, store: DatasetStore, settings: Settings,
                  workflow: "Workflow") -> None:

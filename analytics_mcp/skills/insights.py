@@ -25,6 +25,8 @@ from analytics_mcp.style import MONTHS_FULL
 MAX_CATEGORY_COLUMNS = 4
 MAX_VALUES = 12
 MONTHS_FOR_SEASONALITY = 24
+# Слова в имени колонки, по которым узнаётся процент или доля.
+PERCENT_WORDS = ("%", "процент", "скидк", "discount", "доля", "share")
 HOW_TO_USE = (
     "Сформулируйте 3–5 выводов и 3–5 практических рекомендаций. Каждый "
     "вывод опирается на цифру из facts, свои цифры не считайте. Учтите "
@@ -208,7 +210,9 @@ class InsightGenerationSkill(Skill):
             "источник": analysis.source,
             "строк_в_расчёте": len(frame),
             "главный_показатель": measure,
-            "итоги": {name: rounded(frame[name].sum()) for name in numbers},
+            # Сумма процентов смысла не имеет, в итоги они не идут.
+            "итоги": {name: rounded(frame[name].sum()) for name in numbers
+                      if not col.has_word(name, PERCENT_WORDS)},
         }
         if measure and profit and frame[measure].sum():
             facts["маржа_процент"] = round(
