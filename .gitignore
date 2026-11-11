@@ -9,3 +9,6 @@ __pycache__/
 # Результаты прогонов и файлы, присланные боту
 output/
 data/uploads/
+# Сырые журналы сравнения моделей после распаковки runs.tar.gz
+experiments/model_comparison/runs*/
+experiments/model_comparison/smoke/

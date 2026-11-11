@@ -1,2 +1,0 @@
-{"event": "start", "model": "mistralai/mistral-nemo", "server": "python server.py", "request": "Файл с данными: data/orders_dirty.xlsx\n\nПроанализируй продажи, построй графики и дай рекомендации"}
-{"event": "end", "status": "ok", "steps": 1, "images": [], "usage": {"prompt_tokens": 3452, "completion_tokens": 17, "cost": 3.781008e-05}}
