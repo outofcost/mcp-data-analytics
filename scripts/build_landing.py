@@ -30,17 +30,29 @@ REPO_URL = "https://github.com/outofcost/mcp-data-analytics"
 SCHEMA_PATH = ROOT / "docs" / "tools-schema.json"
 PAGE_PATH = ROOT / "docs" / "index.html"
 
-# Запрос из задания: тот же текст, что в README.
-REQUEST = ("Проанализируй продажи из файла sales_data.csv, построй графики "
-           "и дай рекомендации")
+# Запрос для чата. Сервер назван по имени: так помощник идёт к нему сразу
+# и не пытается разобрать файл своими средствами.
+CHAT_REQUEST = (
+    "Проанализируй через analytics продажи из файла sales_data.csv, "
+    "построй графики и дай рекомендации. Файл лежит на сервере, "
+    "прикладывать его не нужно.")
 
-# Готовый текст для помощника, который умеет подключать MCP-серверы сам.
-PROMPT = f"""\
-Подключись к MCP-серверу для анализа таблиц по адресу {SERVER_URL}.
-Если сам подключиться не можешь, объясни по шагам, где вписать этот адрес \
-в настройках.
-Потом через этот сервер выполни запрос: «{REQUEST}». Файл лежит \
-на сервере, прикладывать его не нужно."""
+# Блок для файла настроек клиента (Cursor и клиенты с таким же форматом).
+CONFIG = json.dumps({"mcpServers": {"analytics": {"url": SERVER_URL}}},
+                    indent=2)
+
+# Запасной путь. Помощник не может добавить себе сервер посреди чата,
+# но с доступом в сеть может обратиться к серверу напрямую: так прошёл
+# облачный агент Cursor.
+FALLBACK = f"""\
+MCP-сервера analytics у тебя в инструментах нет, из этой сессии его \
+не добавить. Работай с ним напрямую: отправляй POST с JSON-RPC на \
+{SERVER_URL}, заголовки Content-Type: application/json и Accept: \
+application/json, text/event-stream. Сначала initialize, потом tools/list \
+и tools/call. Ключ не нужен.
+Начни с load_data(file_path="sales_data.csv") и выполняй поле next_step \
+из каждого ответа, пока анализ не завершится. В конце покажи chat_summary \
+как есть и ссылку на отчёт."""
 
 # Тёмной темы в style.py нет: графики всегда рисуются на белом. Эти цвета
 # нужны только странице.
@@ -148,8 +160,8 @@ button:focus-visible, a:focus-visible {
   outline: 2px solid var(--mark);
   outline-offset: 2px;
 }
-ol { margin: 0 0 10px; padding-left: 22px; }
-ol li { margin-bottom: 6px; }
+.clients { margin: 0 0 10px; padding-left: 22px; }
+.clients li { margin-bottom: 6px; }
 .tools {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -195,23 +207,43 @@ footer p { max-width: none; }
 <button type="button" data-copy="server-url">Скопировать</button>
 </div>
 
-<h2>Отправьте помощнику готовый запрос</h2>
+<h2>Добавьте сервер в настройках до начала чата</h2>
+<p>Из уже идущего чата помощник сервер себе не добавит.</p>
+<ul class="clients">
+<li>В Claude откройте Settings, затем Connectors и нажмите \
+Add custom connector. Назовите сервер analytics, вставьте адрес \
+и выберите вход «No sign in».</li>
+<li>В Cursor на компьютере вставьте блок ниже в файл \
+<code>~/.cursor/mcp.json</code>. Если сервер не появился в списке, \
+перезапустите Cursor.</li>
+<li>Для облачного агента Cursor добавьте сервер в списке MCP \
+на cursor.com/agents, тип HTTP, и запустите нового агента.</li>
+<li>В ChatGPT добавьте в настройках свой MCP-сервер по этому адресу, \
+без аутентификации.</li>
+</ul>
 <div class="box">
-<pre id="prompt">$prompt</pre>
-<button type="button" data-copy="prompt">Скопировать</button>
+<pre id="config">$config</pre>
+<button type="button" data-copy="config">Скопировать</button>
 </div>
-
-<h2>Как подключить в Claude</h2>
-<ol>
-<li>В claude.ai откройте Settings, затем Connectors и нажмите \
-Add custom connector.</li>
-<li>Вставьте адрес сервера и выберите вход «No sign in».</li>
-<li>В новом чате напишите: «$request». Файл прикладывать не нужно: \
-он лежит на сервере.</li>
-</ol>
+<p class="note">Шаги для Claude я прошёл на этом сервере. Шаги для Cursor \
+сверил с его документацией, шаг для ChatGPT не проверял.</p>
 <p class="note">Claude Desktop, консольный клиент через API и свой \
 Telegram-бот подключаются локально: команды и конфиг лежат \
 <a href="$repo_url#как-подключить-к-клиенту">в README</a>.</p>
+
+<h2>В новом чате отправьте запрос</h2>
+<div class="box">
+<pre id="request">$chat_request</pre>
+<button type="button" data-copy="request">Скопировать</button>
+</div>
+
+<h2>Если сервера нет в списке инструментов</h2>
+<p>Это запасной путь для помощника с доступом в сеть: он обращается \
+к серверу напрямую.</p>
+<div class="box">
+<pre id="fallback">$fallback</pre>
+<button type="button" data-copy="fallback">Скопировать</button>
+</div>
 
 <h2>Попробуйте без установки</h2>
 <p>Напишите в Telegram боту <a href="$bot_url">@$bot_name</a>. Пришлите \
@@ -304,8 +336,9 @@ def build_page(schema: dict) -> str:
         bot_name=html.escape(BOT_URL.rsplit("/", 1)[-1]),
         repo_url=html.escape(REPO_URL),
         repo_name=html.escape(REPO_URL.split("//", 1)[-1]),
-        prompt=html.escape(PROMPT),
-        request=html.escape(REQUEST),
+        config=html.escape(CONFIG),
+        chat_request=html.escape(CHAT_REQUEST),
+        fallback=html.escape(FALLBACK),
         tools=render_tools(schema["tools"]),
         green=style.GREEN,
         dark_green=style.DARK_GREEN,

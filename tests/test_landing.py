@@ -57,3 +57,12 @@ def test_committed_page_matches_schema():
     committed = build_landing.PAGE_PATH.read_text(encoding="utf-8")
     assert committed == build_landing.build_page(read_schema()), (
         "Страница устарела. Пересоберите: python scripts/build_landing.py")
+
+
+def test_config_block_is_valid_json_with_server_address():
+    """Блок настроек со страницы разбирается и ведёт на адрес сервера."""
+    config = json.loads(build_landing.CONFIG)
+    assert config == {"mcpServers": {
+        "analytics": {"url": build_landing.SERVER_URL}}}
+    page = build_landing.build_page(read_schema())
+    assert html.escape(build_landing.CONFIG) in page
