@@ -43,9 +43,11 @@ REPORT_FILE = re.compile(r"[^\s\"'«»()]+\.(?:md|pdf|html)\b")
 
 @dataclass
 class AnalysisResult:
-    """Итог одного анализа: ответ модели и файлы, сохранённые на диск."""
+    """Итог одного анализа: ответ и файлы, сохранённые на диск."""
 
-    answer: str                 # итоговый текст модели
+    # Текст для пользователя: готовый ответ сервера (chat_summary), а если
+    # отчёт не собран, итоговый текст модели.
+    answer: str
     status: str                 # "ok" или "limit" (сработал предел шагов)
     steps: int                  # сколько запросов к модели ушло
     output_dir: Path            # папка с результатами
@@ -92,7 +94,8 @@ def result_to_text(result: CallToolResult, tool_name: str, output_dir: Path,
                    images: list[Path]) -> str:
     """Собирает из ответа инструмента текст для модели.
 
-    Картинку сохраняет в папку вывода и заменяет строкой с именем файла.
+    Картинку сохраняет в папку вывода и заменяет строкой без имени
+    файла: модели оно не нужно, иначе она пересказывает его пользователю.
     Ответ с признаком is_error помечает как ошибку.
     """
     parts = []
@@ -105,7 +108,7 @@ def result_to_text(result: CallToolResult, tool_name: str, output_dir: Path,
             path = output_dir / f"chart_{number:02d}_{tool_name}.{extension}"
             path.write_bytes(base64.b64decode(block.data))
             images.append(path)
-            parts.append(f"[картинка сохранена в файл {path.name}]")
+            parts.append("[график показан пользователю]")
         else:
             parts.append(f"[блок типа {block.type} пропущен]")
     text = "\n".join(parts)
@@ -128,6 +131,19 @@ def find_report_files(text: str) -> list[Path]:
         if path.is_file() and path not in found:
             found.append(path)
     return found
+
+
+def find_chat_summary(text: str) -> str:
+    """Достаёт из ответа инструмента готовый текст для пользователя.
+
+    Сервер кладёт его в поле chat_summary. Клиент не знает, какой
+    инструмент его вернул: порядок шагов остаётся в сервере.
+    """
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return ""
+    return data.get("chat_summary", "") if isinstance(data, dict) else ""
 
 
 def error_text(error: BaseException) -> str:
@@ -265,7 +281,7 @@ async def run_analysis(
     images: list[Path] = []
     files: list[Path] = []
     usage = {"prompt_tokens": 0, "completion_tokens": 0, "cost": 0.0}
-    status, answer, step = "limit", "", 0
+    status, answer, summary, step = "limit", "", "", 0
 
     async with Client(server) as mcp_client, httpx2.AsyncClient(
         base_url=base_url,
@@ -306,6 +322,7 @@ async def run_analysis(
                     path for path in find_report_files(text)
                     if path not in files
                 ]
+                summary = find_chat_summary(text) or summary
                 name = call["function"]["name"]
                 write_log(log_path, {
                     "event": "tool_call",
@@ -329,12 +346,16 @@ async def run_analysis(
             "ответа модель не дала. Журнал вызовов показывает, где она "
             "застряла."
         )
+    # Пользователь получает текст, который собрал сервер: он одинаков
+    # у любой модели. Итоговый текст модели остаётся в журнале.
+    model_answer, answer = answer, summary or answer
     answer_path = output_dir / "answer.md"
     answer_path.write_text(answer, encoding="utf-8")
     write_log(log_path, {
         "event": "end",
         "status": status,
         "steps": step,
+        "model_answer": model_answer,
         "images": [path.name for path in images],
         "usage": usage,
     })

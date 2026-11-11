@@ -16,7 +16,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
 from analytics_mcp import columns as col
-from analytics_mcp import report as rules
+from analytics_mcp import report as rep
 from analytics_mcp.models import (Conclusion, FindingsResult,
                                   Recommendation, ReportResult)
 from analytics_mcp.registry import Skill, register_skill, tool
@@ -174,7 +174,12 @@ class InsightGenerationSkill(Skill):
     title = "Выводы"
     guide = ("collect_findings считает цифры для выводов. По ним напишите "
              "выводы и рекомендации и передайте их в save_report: он "
-             "соберёт отчёт с графиками.")
+             "соберёт отчёт с графиками и вернёт готовый ответ для "
+             "пользователя.")
+    rules = (
+        "После save_report покажи пользователю текст из поля chat_summary "
+        "без изменений: это готовый ответ.",
+    )
 
     def is_done(self, analysis: Analysis) -> bool:
         """Этап выполнен, когда отчёт сохранён."""
@@ -284,23 +289,23 @@ class InsightGenerationSkill(Skill):
         рекомендации, все построенные графики с подписями, что сделано
         с данными. В Markdown приложением идут все цифры из
         collect_findings. PDF это один файл с графиками внутри, его удобно
-        открыть или переслать. Возвращает
-        пути к файлам, ссылку на PDF (если сервер работает по HTTP)
-        и список того, чего отчёту не хватает.
+        открыть или переслать. Возвращает готовый короткий ответ для
+        пользователя (chat_summary), пути к файлам, ссылку на PDF (если
+        сервер работает по HTTP) и список того, чего отчёту не хватает.
         """
         dataset = self.store.current(dataset_id)
-        found = [(rules.phrase(item.headline), item.evidence.strip())
+        found = [(rep.phrase(item.headline), item.evidence.strip())
                  for item in conclusions]
-        advice = [(rules.phrase(item.action), item.reason.strip())
+        advice = [(rep.phrase(item.action), item.reason.strip())
                   for item in recommendations]
         # Число пунктов и длину текста проверяет этот код, а не pydantic:
         # так модель получает все нарушения сразу и по-русски.
-        problems = rules.check_points(
+        problems = rep.check_points(
             "conclusions", found, ("headline", "evidence"),
-            rules.CONCLUSIONS, rules.HEADLINE_WORDS, need_digit=True)
-        problems += rules.check_points(
+            rep.CONCLUSIONS, rep.HEADLINE_WORDS, need_digit=True)
+        problems += rep.check_points(
             "recommendations", advice, ("action", "reason"),
-            rules.RECOMMENDATIONS, rules.ACTION_WORDS, need_digit=False)
+            rep.RECOMMENDATIONS, rep.ACTION_WORDS, need_digit=False)
         if problems:
             raise ToolError(
                 "save_report не принял аргументы. Исправьте и вызовите "
@@ -321,11 +326,11 @@ class InsightGenerationSkill(Skill):
 
         def tidy(text: str) -> str:
             """Приводит строку к виду отчёта, имена колонок к подписям."""
-            return rules.tidy(text, names)
+            return rep.tidy(text, names)
 
         facts = analysis.findings or {}
         period = facts.get("период")
-        report = rules.Report(
+        report = rep.Report(
             title=tidy(title.strip()) or "Отчёт по данным",
             source=analysis.source,
             period=(tidy(f"{period['начало']} – {period['конец']}")
@@ -333,16 +338,16 @@ class InsightGenerationSkill(Skill):
             rows=len(frame),
             created=date.today().strftime("%d.%m.%Y"),
             tiles=[(label, tidy(value)) for label, value
-                   in rules.key_numbers(analysis.findings,
-                                        col.pick_profit(dataset.roles))],
+                   in rep.key_numbers(analysis.findings,
+                                      col.pick_profit(dataset.roles))],
             conclusions=[(tidy(head), tidy(body)) for head, body in found],
             recommendations=[(tidy(head), tidy(body))
                              for head, body in advice],
             charts=[Chart(chart.key, chart.title, chart.path,
                           [tidy(fact) for fact in chart.facts])
                     for chart in analysis.charts],
-            reading=[rules.sentence(tidy(note)) for note in dataset.notes],
-            cleaning=[rules.sentence(tidy(action))
+            reading=[rep.sentence(tidy(note)) for note in dataset.notes],
+            cleaning=[rep.sentence(tidy(action))
                       for action in analysis.cleaning_log]
             or ["Очистка не выполнялась."],
             excluded=excluded,
@@ -357,7 +362,7 @@ class InsightGenerationSkill(Skill):
         folder = self.settings.output_dir / analysis.root_id
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / "report.md"
-        path.write_text("\n".join(rules.to_markdown(report) + appendix),
+        path.write_text("\n".join(rep.to_markdown(report) + appendix),
                         encoding="utf-8")
         # Тот же отчёт одним файлом: в Markdown графики лежат рядом
         # отдельными картинками, в PDF они внутри.
@@ -374,8 +379,14 @@ class InsightGenerationSkill(Skill):
             report_url = f"{self.settings.public_url}/reports/{key}/report.pdf"
         if self.settings.open_report:
             webbrowser.open(pdf_path.resolve().as_uri())
+        # Короткий ответ для чата собирает сервер, а не модель: так он
+        # одинаков в любом клиенте.
+        summary = rep.chat_summary(
+            report, analysis.extra.get("cleaning_counts"),
+            report_url or self.settings.relative(pdf_path), pages)
         return ReportResult(
             dataset_id=dataset_id,
+            chat_summary=summary,
             report_path=self.settings.relative(path),
             pdf_path=self.settings.relative(pdf_path),
             report_url=report_url,

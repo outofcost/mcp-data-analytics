@@ -32,6 +32,21 @@ ISO_DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 ABBREVIATIONS = ("руб.", "шт.", "тыс.", "млн.", "г.", "гг.")
 # Строки ответа графика, которые нужны модели, а читателю отчёта нет.
 SERVICE_FACTS = ("Значений в колонке", "Строк в расчёте", "Строк:", "Период:")
+SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[А-ЯЁA-Z«])")
+# Строка об очистке в ответе для чата: счётчик из clean_data, фраза
+# и формы слова после числа.
+CLEANING_PHRASES = (
+    ("duplicates", "удалил {} {}", ("дубликат", "дубликата", "дубликатов")),
+    ("dropped", "удалил {} {} с пропусками", ("строку", "строки", "строк")),
+    ("filled", "заполнил {} {}", ("пропуск", "пропуска", "пропусков")),
+    ("spelling", "привёл к одному написанию {} {}",
+     ("значение", "значения", "значений")),
+    ("outliers", "исключил из расчёта {} {} с выбросами",
+     ("строку", "строки", "строк")),
+    ("removed_outliers", "удалил {} {} с выбросами",
+     ("строку", "строки", "строк")),
+)
+CHAT_ACTIONS = 3            # столько рекомендаций идёт в ответ для чата
 HOW_BUILT = ("Как собран отчёт. Цифры и графики посчитал сервер. Выводы "
              "и рекомендации сформулировала языковая модель по этим цифрам. "
              "Строк, помеченных как выбросы и не вошедших в расчёт: {}.")
@@ -211,3 +226,45 @@ def to_markdown(report: Report) -> list[str]:
             lines.append("")
     lines += [report.how_built, ""]
     return lines
+
+
+def cleaning_summary(counts: dict[str, int] | None) -> str:
+    """Пишет одной строкой, что сделала очистка, по её счётчикам."""
+    if counts is None:
+        return "Очистка не выполнялась."
+    parts = [template.format(counts[key], plural(counts[key], *forms))
+             for key, template, forms in CLEANING_PHRASES if counts.get(key)]
+    if not parts:
+        return "Очистка: данные не менялись."
+    return "Очистка: " + ", ".join(parts) + "."
+
+
+def chat_summary(report: Report, counts: dict[str, int] | None,
+                 link: str, pages: int) -> str:
+    """Собирает короткий ответ для чата из содержания отчёта.
+
+    Текст пишет сервер, поэтому он одинаков у любой модели: строка
+    о данных, все выводы (утверждение и первое предложение пояснения),
+    первые три рекомендации, строка об очистке и где лежит отчёт. Имён
+    файлов графиков в нём нет. Разметка одна: жирный текст в звёздочках.
+
+    Args:
+        report: содержание отчёта.
+        counts: счётчики очистки из clean_data или None без очистки.
+        link: ссылка на PDF или путь к нему.
+        pages: сколько страниц в PDF.
+    """
+    lines = [f"**{report.title}**",
+             "Данные: " + ", ".join(report.about) + ".", "", "**Выводы**"]
+    lines += [f"{number}. {head.rstrip('.')}. {SENTENCE_END.split(body)[0]}"
+              for number, (head, body) in enumerate(report.conclusions, 1)]
+    lines += ["", "**Что сделать**"]
+    lines += [f"{number}. {head.rstrip('.')}." for number, (head, _)
+              in enumerate(report.recommendations[:CHAT_ACTIONS], 1)]
+    charts = len(report.charts)
+    lines += [
+        "", cleaning_summary(counts),
+        f"Полный отчёт: {link}, {pages} "
+        f"{plural(pages, 'страница', 'страницы', 'страниц')}, {charts} "
+        f"{plural(charts, 'график', 'графика', 'графиков')}."]
+    return "\n".join(lines).replace(NBSP, " ")

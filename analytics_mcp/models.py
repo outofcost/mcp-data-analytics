@@ -160,9 +160,13 @@ class Recommendation(BaseModel):
 
 
 class ReportResult(BaseModel):
-    """Ответ save_report: где лежит отчёт и что в него вошло."""
+    """Ответ save_report: готовый текст для чата и где лежит отчёт."""
 
     dataset_id: str = Field(description=DATASET_ID)
+    chat_summary: str = Field(
+        description="Готовый ответ пользователю: выводы, рекомендации, что "
+                    "сделала очистка и где отчёт. Покажите его без "
+                    "изменений")
     report_path: str = Field(description="Путь к отчёту в Markdown от "
                                          "корня репозитория")
     pdf_path: str = Field(description="Путь к тому же отчёту в PDF: один "

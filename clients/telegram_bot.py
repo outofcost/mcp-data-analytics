@@ -2,7 +2,8 @@
 
 Пользователь присылает CSV или Excel и пишет запрос в подписи к файлу.
 Бот сохраняет файл в data/uploads, вызывает run_analysis из консольного
-клиента, отправляет графики альбомом и отчёт одним PDF. Следующее текстовое
+клиента, отправляет графики альбомом, короткий ответ сервера и отчёт одним
+PDF. Следующее текстовое
 сообщение задаёт новый запрос к последнему присланному файлу.
 
 Бот сам опрашивает Telegram (long polling), публичный адрес ему не нужен.
@@ -233,10 +234,12 @@ class TelegramBot:
         if response.status_code != 200:
             raise RuntimeError(f"Файл не скачался: {response.status_code}")
 
-        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        # У каждого файла своя папка с отметкой времени, имя остаётся
+        # настоящим: оно попадает в шапку отчёта.
         stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         safe_name = re.sub(r"[^\w.\-]", "_", name)
-        path = UPLOAD_DIR / f"{stamp}_{safe_name}"
+        path = UPLOAD_DIR / stamp / safe_name
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(response.content)
         return path
 

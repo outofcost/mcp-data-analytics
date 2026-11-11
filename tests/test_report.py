@@ -129,3 +129,63 @@ def test_report_sections_go_in_the_same_order_in_markdown_and_pdf(
         ReportPdf, "section",
         lambda pdf, title: (drawn.append(title), section(pdf, title))[1])
     run(tmp_path, scenario)
+
+
+def test_chat_summary_is_built_by_the_server(tmp_path):
+    """save_report возвращает готовый ответ для чата без имён графиков."""
+    async def scenario(session: Session) -> None:
+        raw_id = (await session.call(
+            "load_data", file_path="sales_data.csv")).data["dataset_id"]
+        await session.call("describe_data", dataset_id=raw_id)
+        clean_id = (await session.call(
+            "clean_data", dataset_id=raw_id)).data["dataset_id"]
+        suggested = (await session.call(
+            "suggest_charts", dataset_id=clean_id)).data["suggestions"]
+        for suggestion in suggested[:3]:
+            await session.call(suggestion["tool"], **suggestion["arguments"])
+        await session.call("collect_findings", dataset_id=clean_id)
+        report = (await session.call(
+            "save_report", dataset_id=clean_id, title="Продажи 2023–2024",
+            conclusions=CONCLUSIONS, recommendations=RECOMMENDATIONS)).data
+        assert report["chat_summary"].splitlines() == [
+            "**Продажи 2023–2024**",
+            "Данные: sales_data.csv, 01.01.2023 – 25.12.2024, 190 строк "
+            "в расчёте.",
+            "",
+            "**Выводы**",
+            "1. В декабре продажи выше обычного месяца. Декабрь даёт 1,6 "
+            "от среднего месяца, ноябрь 1,26.",
+            "2. Готовые обеды продаются в убыток. Прибыль −126 415 при "
+            "марже −6,9%.",
+            "3. Казань растёт быстрее остальных регионов. Вторая половина "
+            "периода к первой: Казань +46,5%.",
+            "",
+            "**Что сделать**",
+            "1. Пересмотреть цену готовых обедов.",
+            "2. Подготовить запасы к ноябрю и декабрю.",
+            "",
+            "Очистка: удалил 3 дубликата, заполнил 9 пропусков, исключил "
+            "из расчёта 2 строки с выбросами.",
+            f"Полный отчёт: {report['pdf_path']}, 3 страницы, 3 графика.",
+        ]
+        assert "chart_" not in report["chat_summary"]
+        assert "chat_summary" in report["next_step"]
+
+    run(tmp_path, scenario)
+
+
+def test_chat_summary_ends_with_the_link_in_http_mode(tmp_path):
+    """По HTTP в ответе для чата стоит ссылка на отчёт, пути к файлу нет."""
+    async def scenario(session: Session) -> None:
+        raw_id = (await session.call(
+            "load_data", file_path="sales_data.csv")).data["dataset_id"]
+        report = (await session.call(
+            "save_report", dataset_id=raw_id, title="Отчёт",
+            conclusions=CONCLUSIONS, recommendations=RECOMMENDATIONS)).data
+        last = report["chat_summary"].splitlines()[-1]
+        assert last == (f"Полный отчёт: {report['report_url']}, 1 страница, "
+                        "0 графиков.")
+        # Без очистки и без collect_findings ответ это говорит прямо.
+        assert "Очистка не выполнялась." in report["chat_summary"]
+
+    run(tmp_path, scenario, public_url="https://example.test")

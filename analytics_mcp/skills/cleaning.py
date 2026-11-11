@@ -5,6 +5,7 @@
 выбросы помечаются и остаются в таблице.
 """
 
+from collections import Counter
 from typing import Annotated, Literal
 
 import pandas as pd
@@ -24,14 +25,20 @@ CHECK_FACTOR = 3.0
 EXCLUDE_FACTOR = 6.0
 MIN_ROWS_FOR_OUTLIERS = 8
 FILL_CATEGORY = "Не указано"
+# Под этим ключом очистка оставляет свои счётчики для короткого ответа
+# в чат: сколько дубликатов удалено, сколько пропусков заполнено.
+COUNTS_KEY = "cleaning_counts"
 
 
-def normalize_text(frame: pd.DataFrame, roles: dict[str, str]) -> list[str]:
+def normalize_text(frame: pd.DataFrame, roles: dict[str, str],
+                   counts: Counter | None = None) -> list[str]:
     """Приводит текстовые значения к одному написанию.
 
     «молочные продукты» и «Молочные продукты» становятся одним значением:
-    выбирается написание, которое встречается чаще.
+    выбирается написание, которое встречается чаще. Число исправленных
+    значений добавляет в counts, если счётчик передан.
     """
+    counts = Counter() if counts is None else counts
     actions = []
     for name in col.columns_with_role(roles, col.CATEGORY):
         original = frame[name]
@@ -47,12 +54,16 @@ def normalize_text(frame: pd.DataFrame, roles: dict[str, str]) -> list[str]:
                 f"{int(changed.sum())} строк (например, «{original[first]}» "
                 f"→ «{normalized[first]}»)")
             frame[name] = normalized
+            counts["spelling"] += int(changed.sum())
     return actions
 
 
-def fill_gaps(frame: pd.DataFrame, roles: dict[str, str],
-              mode: str) -> tuple[pd.DataFrame, list[str], list[str]]:
-    """Обрабатывает пропуски и возвращает таблицу, действия и оставленное."""
+def fill_gaps(frame: pd.DataFrame, roles: dict[str, str], mode: str,
+              counts: Counter) -> tuple[pd.DataFrame, list[str], list[str]]:
+    """Обрабатывает пропуски и возвращает таблицу, действия и оставленное.
+
+    Число удалённых строк и заполненных пропусков добавляет в counts.
+    """
     actions, untouched = [], []
     checked = [name for name in frame.columns
                if roles[name] in (col.DATE, col.NUMBER, col.CATEGORY)]
@@ -65,6 +76,7 @@ def fill_gaps(frame: pd.DataFrame, roles: dict[str, str],
     if mode == "drop":
         keep = frame[checked].notna().all(axis=1)
         actions.append(f"удалил строки с пропусками: {int((~keep).sum())}")
+        counts["dropped"] += int((~keep).sum())
         return frame[keep], actions, untouched
 
     for name in col.columns_with_role(roles, col.DATE):
@@ -72,6 +84,7 @@ def fill_gaps(frame: pd.DataFrame, roles: dict[str, str],
         if missing.any():
             actions.append(f"удалил строки без даты в колонке «{name}»: "
                            f"{int(missing.sum())}")
+            counts["dropped"] += int(missing.sum())
             frame = frame[~missing]
     for name in col.columns_with_role(roles, col.NUMBER):
         missing = int(frame[name].isna().sum())
@@ -80,12 +93,14 @@ def fill_gaps(frame: pd.DataFrame, roles: dict[str, str],
             frame[name] = frame[name].fillna(median)
             actions.append(f"заполнил пропуски в колонке «{name}» медианой "
                            f"{format_number(median, exact=True)}: {missing}")
+            counts["filled"] += missing
     for name in col.columns_with_role(roles, col.CATEGORY):
         missing = int(frame[name].isna().sum())
         if missing:
             frame[name] = frame[name].fillna(FILL_CATEGORY)
             actions.append(f"заполнил пропуски в колонке «{name}» значением "
                            f"«{FILL_CATEGORY}»: {missing}")
+            counts["filled"] += missing
     return frame, actions, untouched
 
 
@@ -186,6 +201,7 @@ class DataCleaningSkill(Skill):
         roles.pop(col.OUTLIER_COLUMN, None)
         rows_before = len(frame)
         actions, untouched = [], []
+        counts: Counter = Counter()
 
         empty = col.columns_with_role(roles, col.EMPTY)
         if empty:
@@ -194,17 +210,18 @@ class DataCleaningSkill(Skill):
                      if name not in empty}
             actions.append(f"удалил пустые колонки: {', '.join(empty)}")
 
-        actions += normalize_text(frame, roles)
+        actions += normalize_text(frame, roles, counts)
 
         duplicates = int(frame.duplicated().sum())
         if duplicates and drop_duplicates:
             frame = frame.drop_duplicates()
             actions.append(f"удалил полные дубликаты строк: {duplicates}")
+            counts["duplicates"] = duplicates
         elif duplicates:
             untouched.append(f"Дубликаты оставлены: {duplicates}.")
 
-        frame, gap_actions, gap_untouched = fill_gaps(frame, roles,
-                                                      fill_missing)
+        frame, gap_actions, gap_untouched = fill_gaps(
+            frame, roles, fill_missing, counts)
         actions += gap_actions
         untouched += gap_untouched
 
@@ -215,9 +232,11 @@ class DataCleaningSkill(Skill):
             if count and outliers == "remove":
                 frame = frame[~mask]
                 actions.append(f"удалил строки с грубыми выбросами: {count}")
+                counts["removed_outliers"] = count
             elif count:
                 frame[col.OUTLIER_COLUMN] = mask
                 roles[col.OUTLIER_COLUMN] = col.FLAG
+                counts["outliers"] = count
                 actions.append(
                     f"пометил строки с грубыми выбросами: {count}. Они "
                     f"остались в таблице (колонка {col.OUTLIER_COLUMN}), "
@@ -255,6 +274,7 @@ class DataCleaningSkill(Skill):
                                   roles, "clean")
         analysis.clean_id = clean.dataset_id
         analysis.cleaning_log = list(actions)
+        analysis.extra[COUNTS_KEY] = dict(counts)
         return CleanResult(
             dataset_id=clean.dataset_id,
             rows_before=rows_before,
