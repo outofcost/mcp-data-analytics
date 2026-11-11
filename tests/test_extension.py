@@ -44,3 +44,24 @@ def test_new_skill_is_picked_up_without_core_changes(tmp_path):
         run(tmp_path, scenario)
     finally:
         registry._SKILLS.pop("RowCountSkill")
+
+
+def test_abc_skill_added_as_one_file(tmp_path):
+    """ABC-анализ: группы считаются, убыточный показатель отклоняется."""
+    async def scenario(session: Session) -> None:
+        dataset_id = (await session.call(
+            "load_data", file_path="sales_data.csv")).data["dataset_id"]
+        dataset_id = (await session.call(
+            "clean_data", dataset_id=dataset_id)).data["dataset_id"]
+        reply = await session.call("abc_analysis", dataset_id=dataset_id,
+                                   col="Region")
+        assert reply.images
+        group_a = reply.data["facts"][1]
+        assert group_a.startswith("Группа A (") and "Москва" in group_a
+
+        reply = await session.call("abc_analysis", dataset_id=dataset_id,
+                                   col="Product", value_col="Profit")
+        assert reply.is_error
+        assert "Готовые обеды" in reply.text
+
+    run(tmp_path, scenario)
