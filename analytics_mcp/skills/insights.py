@@ -21,6 +21,7 @@ from analytics_mcp.style import MONTHS_FULL
 
 MAX_CATEGORY_COLUMNS = 4
 MAX_VALUES = 12
+MONTHS_FOR_SEASONALITY = 24
 HOW_TO_USE = (
     "Сформулируйте 3–5 выводов и 3–5 практических рекомендаций. Каждый "
     "вывод опирается на цифру из facts, свои цифры не считайте. Учтите "
@@ -66,7 +67,9 @@ def time_facts(data: pd.DataFrame, date_col: str,
             "последний_месяц_к_первому_процент": change_percent(
                 monthly.iloc[-1], monthly.iloc[0]),
         }
-    if len(monthly) >= 12:
+    # Сезонность видна только на двух полных годах: по одному году её
+    # не отличить от разового события.
+    if len(monthly) >= MONTHS_FOR_SEASONALITY:
         by_month = monthly.groupby(monthly.index.month).mean()
         index = (by_month / by_month.mean()).sort_values(ascending=False)
         facts["сезонность"] = {
@@ -181,9 +184,10 @@ class InsightGenerationSkill(Skill):
     ) -> FindingsResult:
         """Считает цифры, на которых строятся выводы и рекомендации.
 
-        Итоги по числовым колонкам, динамика по месяцам, сезонность, суммы
-        по годам, разрезы по категориям (доли, маржа, рост второй половины
-        периода к первой), самые сильные корреляции, сведения об очистке.
+        Итоги по числовым колонкам, динамика по месяцам, сезонность (если
+        данных хватает на два года), суммы по годам, разрезы по категориям
+        (доли, маржа, рост второй половины периода к первой), самые сильные
+        корреляции, сведения об очистке.
         Сам выводов не пишет: их формулирует модель по этим цифрам.
         """
         dataset = self.store.get(dataset_id)
