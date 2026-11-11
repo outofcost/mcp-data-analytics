@@ -127,17 +127,23 @@ class VisualizationSkill(Skill):
             found.append(("plot_trend", {"x_col": dates[0], "y_col": measure},
                           "есть дата и число: динамика показателя во "
                           "времени"))
+        by_category = []
         for name in categories[:2]:
             arguments = {"col": name}
             if measure:
                 arguments["value_col"] = measure
-            found.append(("plot_distribution", arguments,
-                          "есть категория и число: сравнение по значениям "
-                          f"колонки «{name}»"))
+            by_category.append(("plot_distribution", arguments,
+                                "есть категория и число: сравнение по "
+                                f"значениям колонки «{name}»"))
+        # Первые три предложения это тройка из задания: динамика,
+        # распределение, корреляции. Модель, которая строит ровно три
+        # графика, иначе оставляла корреляции непостроенными.
+        found += by_category[:1]
         if len(numbers) >= 2:
             found.append(("correlation_analysis", {},
                           "числовых колонок две или больше: связи между "
                           "показателями"))
+        found += by_category[1:]
         if measure:
             found.append(("plot_distribution", {"col": measure},
                           "есть число: как распределены его значения"))

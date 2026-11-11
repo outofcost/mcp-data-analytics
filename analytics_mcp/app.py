@@ -13,6 +13,7 @@ from analytics_mcp.store import DatasetStore
 from analytics_mcp.workflow import Workflow
 
 SERVER_NAME = "analytics"
+SERVER_VERSION = "1.0.0"   # клиент видит её в ответе на подключение
 
 
 def build_server(settings: Settings | None = None) -> MCPServer:
@@ -24,7 +25,8 @@ def build_server(settings: Settings | None = None) -> MCPServer:
     workflow.skills = [skill_class(store, settings, workflow)
                        for skill_class in discover_skills()]
 
-    server = MCPServer(SERVER_NAME, instructions=workflow.instructions())
+    server = MCPServer(SERVER_NAME, instructions=workflow.instructions(),
+                       version=SERVER_VERSION)
     for skill in workflow.skills:
         for method in skill.tools():
             server.add_tool(method, title=method.title or None,

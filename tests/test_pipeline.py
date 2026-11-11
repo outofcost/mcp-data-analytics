@@ -74,7 +74,10 @@ def test_full_chain_on_sales_data(tmp_path):
 
         suggested = (await session.call("suggest_charts",
                                         dataset_id=clean_id)).data
-        assert suggested["suggestions"][0]["tool"] == "plot_trend"
+        # Первые три предложения это тройка из задания: динамика,
+        # распределение, корреляции.
+        assert [item["tool"] for item in suggested["suggestions"][:3]] == [
+            "plot_trend", "plot_distribution", "correlation_analysis"]
         for suggestion in suggested["suggestions"][:3]:
             chart = await session.call(suggestion["tool"],
                                        **suggestion["arguments"])
