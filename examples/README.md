@@ -17,7 +17,7 @@ python clients/console_client.py --file data/orders_dirty.xlsx "Проанали
 | `report-sales/` | Отчёт по `data/sales_data.csv`: `report.md`, тот же отчёт одним файлом `report.pdf` и пять графиков |
 | `report-orders/` | Отчёт по «грязной» выгрузке `data/orders_dirty.xlsx`: `report.md`, `report.pdf` и четыре графика |
 | `console/` | Журнал вызовов первого запуска `console-log.txt` и итоговый ответ модели `answer.md` |
-| `screenshots/` | Скриншоты тех же запросов в Claude Desktop, claude.ai и Telegram |
+| `screenshots/` | Скриншоты запросов в Claude Desktop, claude.ai и Telegram |
 
 Отчёты собрал инструмент `save_report`. Цифры и графики в них посчитал сервер, выводы и рекомендации написала модель по этим цифрам.
 
@@ -31,6 +31,23 @@ python clients/console_client.py --file data/orders_dirty.xlsx "Проанали
 | `orders_dirty.xlsx` | 8 | 10 | ok | 0,003 $ |
 
 Числа взяты из последней строки журнала каждого запуска (поля `steps`, `status`, `usage.cost`). Журнал второго запуска в репозиторий не клал.
+
+## Что на скриншотах
+
+| Файл | Что видно |
+|---|---|
+| `claude-desktop-1-vyzovy.webp` | Обычный чат Claude Desktop: файл прикреплён к чату, сервер назван в запросе, список вызовов инструментов по порядку |
+| `claude-desktop-2-vyvody.webp` | Тот же чат: выводы и рекомендации |
+| `claude-desktop-3-grafiki-v-blokah.webp` | Тот же чат: графики видны только в раскрытых блоках вызова и обрезаны |
+| `claude-desktop-4-excel.webp` | Обычный чат Claude Desktop: файл `orders_dirty.xlsx` назван по имени, без вложения |
+| `claude-ai-1-otvet-i-grafik.webp` | claude.ai: ответ и график в боковой панели |
+| `claude-ai-2-grafiki-faylami.webp` | claude.ai: графики файлами под ответом |
+| `claude-ai-3-ssylka-na-otchet.webp` | claude.ai: ссылка на PDF в ответе |
+| `claude-ai-4-pdf-po-ssylke.webp` | PDF, открытый в браузере по ссылке сервера |
+| `telegram-1-albom-i-otvet.webp` | Telegram-бот: альбом графиков и начало ответа |
+| `telegram-2-pdf.webp` | Telegram-бот: `report.pdf`, открытый на телефоне |
+
+Скриншоты снял 11 ноября 2026 по ходу работы, часть из них раньше последних правок. Отличия от текущего кода три: на осях графиков ещё стоит знак ₽, PDF на скриншотах занимает 7 страниц вместо 5, в фактах под графиком есть строка про изменение последнего периода к первому. Отчёты в `report-sales/` и `report-orders/` получены на текущем коде.
 
 ## Что проверить в отчёте по `sales_data.csv`
 

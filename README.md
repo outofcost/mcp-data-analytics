@@ -190,6 +190,20 @@ load_data → describe_data → clean_data → suggest_charts
 | Консольный клиент, OpenRouter | stdio | да | PNG в папке запуска | PDF в папке запуска |
 | Telegram-бот | stdio | да | альбом в чате | PDF файлом |
 
+Так запрос выглядит в claude.ai: графики приходят файлами под ответом, один открыт в боковой панели.
+
+![Ответ и график в claude.ai](examples/screenshots/claude-ai-1-otvet-i-grafik.webp)
+
+Так он выглядит в обычном чате Claude Desktop: вызовы инструментов идут по порядку, графики остаются внутри блоков вызова.
+
+![Вызовы инструментов в Claude Desktop](examples/screenshots/claude-desktop-1-vyzovy.webp)
+
+Бот в Telegram присылает графики альбомом и отчёт одним PDF.
+
+<img src="examples/screenshots/telegram-1-albom-i-otvet.webp" alt="Альбом графиков и ответ бота" width="320">
+
+Остальные скриншоты лежат в [examples/screenshots/](examples/screenshots/), подписи к ним в [examples/README.md](examples/README.md).
+
 Все проверки делал 11 ноября 2026 на одной машине с macOS. В claude.ai запрос прошёл на двух файлах: `sales_data.csv` и `orders_dirty.xlsx`. В обычном чате Claude Desktop сервер находится поиском по описаниям инструментов. Поэтому описания написаны словами пользователя, а `list_data_files` называет файлы папки прямо в описании.
 
 ChatGPT и Codex подключались только к пробному серверу с одним инструментом, который я писал до основного кода. ChatGPT график из ответа инструмента не показал. С настоящим сервером я их не проверял.
