@@ -79,7 +79,7 @@ def fill_gaps(frame: pd.DataFrame, roles: dict[str, str],
             median = frame[name].median()
             frame[name] = frame[name].fillna(median)
             actions.append(f"заполнил пропуски в колонке «{name}» медианой "
-                           f"{format_number(median)}: {missing}")
+                           f"{format_number(median, exact=True)}: {missing}")
     for name in col.columns_with_role(roles, col.CATEGORY):
         missing = int(frame[name].isna().sum())
         if missing:
@@ -231,8 +231,15 @@ class DataCleaningSkill(Skill):
                     "пик.")
 
         if not actions:
-            actions.append("дубликатов, пропусков и выбросов не нашёл, "
-                           "таблица не менялась")
+            # Называем только то, что по этим настройкам действительно
+            # искали: отключённый шаг в отчёт о проверке не попадает.
+            checked = [word for word, enabled in (
+                ("дубликатов", drop_duplicates),
+                ("пропусков", fill_missing != "none"),
+                ("выбросов", outliers != "none")) if enabled]
+            found_nothing = (f"{', '.join(checked)} не нашёл, "
+                             if checked else "")
+            actions.append(f"{found_nothing}таблица не менялась")
         if analysis.charts or analysis.findings:
             analysis.charts, analysis.findings = [], None
             analysis.report_path = None
