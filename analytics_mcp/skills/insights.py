@@ -145,7 +145,8 @@ def render(value: Any, depth: int = 0) -> list[str]:
                 lines.append(f"{pad}- {name}:")
                 lines += render(item, depth + 1)
             else:
-                lines.append(f"{pad}- {name}: {item}")
+                shown = "нет данных" if item is None else item
+                lines.append(f"{pad}- {name}: {shown}")
     elif isinstance(value, list):
         if all(not isinstance(item, (dict, list)) for item in value):
             return [f"{pad}- " + "; ".join(str(item) for item in value)]
@@ -262,11 +263,11 @@ class InsightGenerationSkill(Skill):
         """Собирает отчёт и сохраняет его в двух видах: Markdown и PDF.
 
         В отчёт входят: что сделано с данными, все построенные графики
-        с подписями, выводы и рекомендации из аргументов, цифры из
-        collect_findings. PDF это один файл с графиками внутри, его
-        удобно открыть или переслать. Возвращает пути к файлам, ссылку
-        на PDF (если сервер работает по HTTP) и список того, чего отчёту
-        не хватает.
+        с подписями, выводы и рекомендации из аргументов. В Markdown
+        приложением идут все цифры из collect_findings. PDF это один файл
+        с графиками внутри, его удобно открыть или переслать. Возвращает
+        пути к файлам, ссылку на PDF (если сервер работает по HTTP)
+        и список того, чего отчёту не хватает.
         """
         conclusions = [text.strip() for text in conclusions if text.strip()]
         recommendations = [text.strip() for text in recommendations
@@ -312,9 +313,6 @@ class InsightGenerationSkill(Skill):
         lines += [f"{n}. {text}" for n, text in enumerate(conclusions, 1)]
         lines += ["", "## Рекомендации", ""]
         lines += [f"{n}. {text}" for n, text in enumerate(recommendations, 1)]
-        if analysis.findings:
-            lines += ["", "## Цифры, на которых стоят выводы", ""]
-            lines += render(analysis.findings)
         lines += [
             "", "## Как собран отчёт", "",
             "Цифры и графики посчитал сервер. Выводы и рекомендации "
@@ -322,11 +320,17 @@ class InsightGenerationSkill(Skill):
             f"помеченных как выбросы и не вошедших в расчёт: {excluded}.",
             "",
         ]
+        # Полный список цифр идёт приложением только в Markdown: он нужен
+        # для сверки выводов, а в PDF занимал три страницы сплошного списка.
+        appendix = []
+        if analysis.findings:
+            appendix = ["## Приложение. Цифры, на которых стоят выводы", "",
+                        *render(analysis.findings), ""]
 
         folder = self.settings.output_dir / analysis.root_id
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / "report.md"
-        path.write_text("\n".join(lines), encoding="utf-8")
+        path.write_text("\n".join(lines + appendix), encoding="utf-8")
         # Тот же отчёт одним файлом: в Markdown графики лежат рядом
         # отдельными картинками, в PDF они внутри.
         pdf_path = folder / "report.pdf"
