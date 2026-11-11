@@ -3,7 +3,7 @@
 Один и тот же сервер запускается двумя способами:
 
     python server.py                  # stdio: Claude Desktop, свой клиент
-    python server.py --http           # Streamable HTTP: claude.ai, ChatGPT
+    python server.py --http           # Streamable HTTP: claude.ai
 
 Скиллы и инструменты в обоих случаях одни и те же, меняется только способ
 доставки сообщений.
