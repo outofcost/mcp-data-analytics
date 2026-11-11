@@ -1,0 +1,12 @@
+{
+  "run": "mistral-nemo__sales_data__3",
+  "model": "mistralai/mistral-nemo",
+  "file": "data/sales_data.csv",
+  "repeat": 3,
+  "status": "ok",
+  "seconds": 4.0,
+  "cost_usd": 7.826112e-05,
+  "prompt_tokens": 7028,
+  "completion_tokens": 74,
+  "error": ""
+}

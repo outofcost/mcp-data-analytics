@@ -1,0 +1,12 @@
+{
+  "run": "qwen3.7-flash__sales_data__1",
+  "model": "qwen/qwen3.7-flash",
+  "file": "data/sales_data.csv",
+  "repeat": 1,
+  "status": "error",
+  "seconds": 2.2,
+  "cost_usd": 0.0,
+  "prompt_tokens": 0,
+  "completion_tokens": 0,
+  "error": "ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)"
+}

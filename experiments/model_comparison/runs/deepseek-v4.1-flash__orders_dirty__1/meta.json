@@ -1,0 +1,12 @@
+{
+  "run": "deepseek-v4.1-flash__orders_dirty__1",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "file": "data/orders_dirty.xlsx",
+  "repeat": 1,
+  "status": "ok",
+  "seconds": 24.5,
+  "cost_usd": 0.001578765,
+  "prompt_tokens": 58139,
+  "completion_tokens": 2448,
+  "error": ""
+}

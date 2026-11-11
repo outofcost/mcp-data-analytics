@@ -1,0 +1,12 @@
+{
+  "run": "gpt-6.1-terra__orders_dirty__2",
+  "model": "openai/gpt-6.1-terra",
+  "file": "data/orders_dirty.xlsx",
+  "repeat": 2,
+  "status": "ok",
+  "seconds": 37.4,
+  "cost_usd": 0.012428499999999999,
+  "prompt_tokens": 57216,
+  "completion_tokens": 1214,
+  "error": ""
+}

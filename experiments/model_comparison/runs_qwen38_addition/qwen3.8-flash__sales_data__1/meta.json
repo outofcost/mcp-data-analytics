@@ -1,0 +1,12 @@
+{
+  "run": "qwen3.8-flash__sales_data__1",
+  "model": "qwen/qwen3.8-flash",
+  "file": "data/sales_data.csv",
+  "repeat": 1,
+  "status": "ok",
+  "seconds": 80.1,
+  "cost_usd": 0.004491548,
+  "prompt_tokens": 59299,
+  "completion_tokens": 3623,
+  "error": ""
+}

@@ -1,0 +1,12 @@
+{
+  "run": "gpt-6-luna__sales_data__1",
+  "model": "openai/gpt-6-luna",
+  "file": "data/sales_data.csv",
+  "repeat": 1,
+  "status": "ok",
+  "seconds": 30.9,
+  "cost_usd": 0.0022587300000000005,
+  "prompt_tokens": 43143,
+  "completion_tokens": 1664,
+  "error": ""
+}

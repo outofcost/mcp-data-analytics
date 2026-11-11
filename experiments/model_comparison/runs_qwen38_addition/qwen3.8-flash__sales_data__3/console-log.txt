@@ -1,0 +1,2 @@
+{"event": "start", "model": "qwen/qwen3.8-flash", "server": "python server.py", "request": "Файл с данными: data/sales_data.csv\n\nПроанализируй продажи, построй графики и дай рекомендации"}
+{"event": "end", "status": "error", "error": "ConnectError"}

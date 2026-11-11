@@ -1,0 +1,12 @@
+{
+  "run": "deepseek-v4.1-flash__sales_data__2",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "file": "data/sales_data.csv",
+  "repeat": 2,
+  "status": "ok",
+  "seconds": 19.3,
+  "cost_usd": 0.003900741,
+  "prompt_tokens": 56855,
+  "completion_tokens": 2764,
+  "error": ""
+}

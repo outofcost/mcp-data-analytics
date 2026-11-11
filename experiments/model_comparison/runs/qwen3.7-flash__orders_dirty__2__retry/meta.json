@@ -1,0 +1,12 @@
+{
+  "run": "qwen3.7-flash__orders_dirty__2__retry",
+  "model": "qwen/qwen3.7-flash",
+  "file": "data/orders_dirty.xlsx",
+  "repeat": 2,
+  "status": "error",
+  "seconds": 1.9,
+  "cost_usd": 0.0,
+  "prompt_tokens": 0,
+  "completion_tokens": 0,
+  "error": "ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)"
+}

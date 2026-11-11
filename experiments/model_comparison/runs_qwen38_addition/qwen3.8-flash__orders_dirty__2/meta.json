@@ -1,0 +1,12 @@
+{
+  "run": "qwen3.8-flash__orders_dirty__2",
+  "model": "qwen/qwen3.8-flash",
+  "file": "data/orders_dirty.xlsx",
+  "repeat": 2,
+  "status": "ok",
+  "seconds": 130.1,
+  "cost_usd": 0.00632867,
+  "prompt_tokens": 90821,
+  "completion_tokens": 6376,
+  "error": ""
+}

@@ -1,0 +1,12 @@
+{
+  "run": "gpt-6.1-terra__sales_data__2",
+  "model": "openai/gpt-6.1-terra",
+  "file": "data/sales_data.csv",
+  "repeat": 2,
+  "status": "ok",
+  "seconds": 34.1,
+  "cost_usd": 0.01327645,
+  "prompt_tokens": 44297,
+  "completion_tokens": 1314,
+  "error": ""
+}
