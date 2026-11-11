@@ -236,7 +236,7 @@ Add custom connector. Назовите сервер analytics, вставьте 
 сверил с его документацией, шаг для ChatGPT не проверял.</p>
 <p class="note">Claude Desktop, консольный клиент через API и свой \
 Telegram-бот подключаются локально: команды и конфиг лежат \
-<a href="$repo_url#как-подключить-к-клиенту">в README</a>.</p>
+<a href="$repo_url#запустить-у-себя">в README</a>.</p>
 
 <h2>В новом чате отправьте запрос</h2>
 <div class="box">
