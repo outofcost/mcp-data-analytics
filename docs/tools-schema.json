@@ -1,0 +1,709 @@
+{
+  "instructions": "Сервер анализирует таблицы (CSV и Excel): загружает, чистит, строит графики и собирает отчёт. Анализ идёт по этапам:\n\n1. Загрузка (DataLoadingSkill): load_data, describe_data. Читает файл, определяет типы колонок, считает пропуски и дубликаты.\n2. Очистка (DataCleaningSkill): clean_data. Убирает дубликаты, заполняет пропуски, приводит написание значений к одному виду, помечает выбросы. Сообщает, что сделано, с числами.\n3. Графики (VisualizationSkill): suggest_charts, plot_trend, plot_distribution, correlation_analysis. Строит графики. Нужно не меньше 3 разных. suggest_charts подбирает подходящие по типам колонок и возвращает готовые вызовы.\n4. ABC-анализ (AbcAnalysisSkill): abc_analysis. Необязательный этап. Делит значения категории на группы A, B и C по вкладу в показатель. Вызывайте, когда пользователь спрашивает, какие товары, регионы или клиенты главные.\n5. Выводы (InsightGenerationSkill): collect_findings, save_report. collect_findings считает цифры для выводов. По ним напишите выводы и рекомендации и передайте их в save_report: он соберёт отчёт с графиками.\n\nПравила:\n- Проходи этапы по порядку. В каждом ответе инструмента есть поле next_step: выполняй его, пока анализ не завершён.\n- Таблица адресуется по dataset_id из ответа load_data. После очистки работай с новым dataset_id из ответа clean_data.\n- Цифры для выводов бери только из ответов инструментов, сам не считай.\n- Если пользователь прикрепил таблицу к чату и пути к файлу нет, передай её текст в аргументе csv_text инструмента load_data.\n- Отвечай на языке пользователя.",
+  "tools": [
+    {
+      "name": "load_data",
+      "description": "Загружает таблицу и определяет её структуру. Первый шаг анализа.\n\nНужен один из аргументов: file_path или csv_text. Сам находит строку\nзаголовка, разделитель и кодировку, определяет тип каждой колонки\n(дата, число, категория), считает пропуски и дубликаты. Возвращает\ndataset_id, по которому остальные инструменты находят таблицу.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "default": "",
+            "description": "Путь к файлу CSV или Excel: полный, от корня репозитория или имя файла из папки data/",
+            "title": "File Path",
+            "type": "string"
+          },
+          "sheet": {
+            "default": "",
+            "description": "Имя листа Excel. Пусто: первый лист",
+            "title": "Sheet",
+            "type": "string"
+          },
+          "csv_text": {
+            "default": "",
+            "description": "Текст таблицы в формате CSV вместо файла: когда пользователь прикрепил или вставил таблицу в чат и пути к файлу нет",
+            "title": "Csv Text",
+            "type": "string"
+          }
+        },
+        "title": "load_dataArguments"
+      },
+      "outputSchema": {
+        "$defs": {
+          "ColumnInfo": {
+            "description": "Одна колонка загруженной таблицы.",
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "role": {
+                "description": "date, number, category, id, text или empty",
+                "title": "Role",
+                "type": "string"
+              },
+              "missing": {
+                "description": "Сколько пропусков",
+                "title": "Missing",
+                "type": "integer"
+              },
+              "unique": {
+                "description": "Сколько разных значений",
+                "title": "Unique",
+                "type": "integer"
+              },
+              "examples": {
+                "description": "До трёх примеров значений",
+                "items": {
+                  "type": "string"
+                },
+                "title": "Examples",
+                "type": "array"
+              }
+            },
+            "required": [
+              "name",
+              "role",
+              "missing",
+              "unique",
+              "examples"
+            ],
+            "title": "ColumnInfo",
+            "type": "object"
+          }
+        },
+        "description": "Ответ load_data: структура загруженной таблицы.",
+        "properties": {
+          "dataset_id": {
+            "description": "Идентификатор таблицы. Передавайте его в остальные инструменты",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "source": {
+            "description": "Имя файла или «текст из чата»",
+            "title": "Source",
+            "type": "string"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/$defs/ColumnInfo"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "duplicates": {
+            "description": "Полностью повторяющиеся строки",
+            "title": "Duplicates",
+            "type": "integer"
+          },
+          "missing_total": {
+            "description": "Пропуски во всех колонках",
+            "title": "Missing Total",
+            "type": "integer"
+          },
+          "notes": {
+            "description": "Что сервер сделал при чтении",
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "questions": {
+            "description": "Что стоит уточнить у пользователя до анализа. Пустой список: уточнять нечего",
+            "items": {
+              "type": "string"
+            },
+            "title": "Questions",
+            "type": "array"
+          },
+          "preview": {
+            "description": "Первые три строки",
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Preview",
+            "type": "array"
+          },
+          "next_step": {
+            "description": "Что вызвать дальше. Выполняйте, пока анализ не завершён",
+            "title": "Next Step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataset_id",
+          "source",
+          "rows",
+          "columns",
+          "duplicates",
+          "missing_total",
+          "notes",
+          "questions",
+          "preview",
+          "next_step"
+        ],
+        "title": "LoadResult",
+        "type": "object"
+      }
+    },
+    {
+      "name": "describe_data",
+      "description": "Считает базовую статистику по таблице.\n\nДля чисел: количество, сумма, среднее, медиана, минимум, максимум,\nстандартное отклонение. Для категорий: частые значения и их доли.\nДля дат: границы периода. Отдельно пропуски по колонкам.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dataset_id": {
+            "description": "Идентификатор таблицы из ответа load_data",
+            "title": "Dataset Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataset_id"
+        ],
+        "title": "describe_dataArguments"
+      },
+      "outputSchema": {
+        "description": "Ответ describe_data: базовая статистика.",
+        "properties": {
+          "dataset_id": {
+            "description": "Идентификатор таблицы. Передавайте его в остальные инструменты",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          },
+          "numbers": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            "description": "По числовым колонкам: count, sum, mean, median, min, max, std",
+            "title": "Numbers",
+            "type": "object"
+          },
+          "categories": {
+            "additionalProperties": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "description": "По категориям: до пяти частых значений с числом строк и долей в процентах",
+            "title": "Categories",
+            "type": "object"
+          },
+          "dates": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "description": "По датам: первая, последняя, число дней между ними",
+            "title": "Dates",
+            "type": "object"
+          },
+          "missing": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Пропуски по колонкам",
+            "title": "Missing",
+            "type": "object"
+          },
+          "next_step": {
+            "description": "Что вызвать дальше. Выполняйте, пока анализ не завершён",
+            "title": "Next Step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataset_id",
+          "rows",
+          "numbers",
+          "categories",
+          "dates",
+          "missing",
+          "next_step"
+        ],
+        "title": "DescribeResult",
+        "type": "object"
+      }
+    },
+    {
+      "name": "clean_data",
+      "description": "Чистит таблицу и сообщает, что именно сделано, с числами.\n\nУдаляет пустые колонки и дубликаты, приводит написание категорий\nк одному виду, обрабатывает пропуски, ищет грубые выбросы (дальше\nтрёх межквартильных размахов от квартилей). Исходная таблица не\nменяется: результат сохраняется под новым dataset_id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dataset_id": {
+            "description": "Идентификатор таблицы из ответа load_data",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "drop_duplicates": {
+            "default": true,
+            "description": "Удалять полностью повторяющиеся строки",
+            "title": "Drop Duplicates",
+            "type": "boolean"
+          },
+          "fill_missing": {
+            "default": "auto",
+            "description": "Пропуски: auto заполняет числа медианой, категории значением «Не указано» и удаляет строки без даты; drop удаляет строки с пропусками; none оставляет как есть",
+            "enum": [
+              "auto",
+              "drop",
+              "none"
+            ],
+            "title": "Fill Missing",
+            "type": "string"
+          },
+          "outliers": {
+            "default": "flag",
+            "description": "Выбросы: flag помечает строки и исключает их из графиков и итогов, строки остаются в таблице; remove удаляет строки; none не ищет выбросы",
+            "enum": [
+              "flag",
+              "remove",
+              "none"
+            ],
+            "title": "Outliers",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataset_id"
+        ],
+        "title": "clean_dataArguments"
+      },
+      "outputSchema": {
+        "description": "Ответ clean_data: что именно сделала очистка.",
+        "properties": {
+          "dataset_id": {
+            "description": "Идентификатор очищенной таблицы. Дальше работайте с ним. Исходная таблица не изменилась",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "rows_before": {
+            "title": "Rows Before",
+            "type": "integer"
+          },
+          "rows_after": {
+            "title": "Rows After",
+            "type": "integer"
+          },
+          "actions": {
+            "description": "Что сделано, с числами: сколько строк удалено, сколько пропусков заполнено и чем",
+            "items": {
+              "type": "string"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "outliers": {
+            "description": "Найденные выбросы по колонкам: сколько, границы, примеры значений",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Outliers",
+            "type": "array"
+          },
+          "untouched": {
+            "description": "Что очистка намеренно оставила человеку",
+            "items": {
+              "type": "string"
+            },
+            "title": "Untouched",
+            "type": "array"
+          },
+          "next_step": {
+            "description": "Что вызвать дальше. Выполняйте, пока анализ не завершён",
+            "title": "Next Step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataset_id",
+          "rows_before",
+          "rows_after",
+          "actions",
+          "outliers",
+          "untouched",
+          "next_step"
+        ],
+        "title": "CleanResult",
+        "type": "object"
+      }
+    },
+    {
+      "name": "suggest_charts",
+      "description": "Подбирает графики по типам колонок и возвращает готовые вызовы.\n\nПравила: дата и число дают график динамики; категория и число дают\nсравнение по категориям; число даёт гистограмму; две числовые\nколонки и больше дают матрицу корреляций. Главный показатель\nвыбирается по имени колонки (выручка, продажи, сумма), иначе это\nпервая числовая колонка.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dataset_id": {
+            "description": "Идентификатор таблицы. После очистки: из ответа clean_data",
+            "title": "Dataset Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataset_id"
+        ],
+        "title": "suggest_chartsArguments"
+      },
+      "outputSchema": {
+        "$defs": {
+          "ChartSuggestion": {
+            "description": "Один предложенный график: готовый вызов инструмента.",
+            "properties": {
+              "tool": {
+                "title": "Tool",
+                "type": "string"
+              },
+              "arguments": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Arguments",
+                "type": "object"
+              },
+              "why": {
+                "description": "По какому правилу график выбран",
+                "title": "Why",
+                "type": "string"
+              },
+              "built": {
+                "description": "Уже построен в этом анализе",
+                "title": "Built",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "tool",
+              "arguments",
+              "why",
+              "built"
+            ],
+            "title": "ChartSuggestion",
+            "type": "object"
+          }
+        },
+        "description": "Ответ suggest_charts: какие графики подходят к этим данным.",
+        "properties": {
+          "dataset_id": {
+            "description": "Идентификатор таблицы. Передавайте его в остальные инструменты",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "suggestions": {
+            "items": {
+              "$ref": "#/$defs/ChartSuggestion"
+            },
+            "title": "Suggestions",
+            "type": "array"
+          },
+          "next_step": {
+            "description": "Что вызвать дальше. Выполняйте, пока анализ не завершён",
+            "title": "Next Step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataset_id",
+          "suggestions",
+          "next_step"
+        ],
+        "title": "SuggestResult",
+        "type": "object"
+      }
+    },
+    {
+      "name": "plot_trend",
+      "description": "Строит график тренда: сумма показателя по периодам времени.\n\nВозвращает текст (период, сумма, максимум, минимум, изменение\nпоследнего периода к первому) и картинку PNG.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dataset_id": {
+            "description": "Идентификатор таблицы. После очистки: из ответа clean_data",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "x_col": {
+            "description": "Колонка с датой",
+            "title": "X Col",
+            "type": "string"
+          },
+          "y_col": {
+            "description": "Числовая колонка, значения суммируются по периодам",
+            "title": "Y Col",
+            "type": "string"
+          },
+          "freq": {
+            "default": "auto",
+            "description": "Шаг по времени. auto выбирает по длине периода: больше 120 дней: месяц, больше 21 дня: неделя, иначе день",
+            "enum": [
+              "auto",
+              "day",
+              "week",
+              "month"
+            ],
+            "title": "Freq",
+            "type": "string"
+          },
+          "group_col": {
+            "default": "",
+            "description": "Категория для разбивки на отдельные линии, до пяти самых крупных значений. Пусто: одна линия",
+            "title": "Group Col",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataset_id",
+          "x_col",
+          "y_col"
+        ],
+        "title": "plot_trendArguments"
+      }
+    },
+    {
+      "name": "plot_distribution",
+      "description": "Строит распределение: гистограмму числа или столбцы по категории.\n\nВозвращает текст (для числа: медиана, среднее, границы; для\nкатегории: крупнейшие значения с долями, отрицательные суммы)\nи картинку PNG.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dataset_id": {
+            "description": "Идентификатор таблицы. После очистки: из ответа clean_data",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "col": {
+            "description": "Колонка. Числовая даёт гистограмму, категория даёт столбцы по её значениям",
+            "title": "Col",
+            "type": "string"
+          },
+          "value_col": {
+            "default": "",
+            "description": "Только для категории: числовая колонка, сумма которой сравнивается. Пусто: главный показатель таблицы, а если чисел нет, число строк",
+            "title": "Value Col",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataset_id",
+          "col"
+        ],
+        "title": "plot_distributionArguments"
+      }
+    },
+    {
+      "name": "correlation_analysis",
+      "description": "Строит матрицу корреляций числовых колонок (тепловая карта).\n\nВозвращает текст (пары колонок от самой сильной связи к слабой,\nкоэффициент Пирсона) и картинку PNG. Нужны минимум две числовые\nколонки.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dataset_id": {
+            "description": "Идентификатор таблицы. После очистки: из ответа clean_data",
+            "title": "Dataset Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataset_id"
+        ],
+        "title": "correlation_analysisArguments"
+      }
+    },
+    {
+      "name": "abc_analysis",
+      "description": "Делит значения категории на группы A, B, C по вкладу в сумму.\n\nЗначения сортируются по убыванию суммы. Группа A даёт первые 80%\nсуммы, B следующие 15%, C оставшиеся 5%. Возвращает текст (состав\nгрупп с долями) и диаграмму Парето в формате PNG.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dataset_id": {
+            "description": "Идентификатор таблицы. После очистки: из ответа clean_data",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "col": {
+            "description": "Колонка-категория, значения которой делятся на группы: товар, регион, клиент",
+            "title": "Col",
+            "type": "string"
+          },
+          "value_col": {
+            "default": "",
+            "description": "Числовая колонка, по сумме которой считается вклад. Пусто: главный показатель таблицы",
+            "title": "Value Col",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataset_id",
+          "col"
+        ],
+        "title": "abc_analysisArguments"
+      }
+    },
+    {
+      "name": "collect_findings",
+      "description": "Считает цифры, на которых строятся выводы и рекомендации.\n\nИтоги по числовым колонкам, динамика по месяцам, сезонность, суммы\nпо годам, разрезы по категориям (доли, маржа, рост второй половины\nпериода к первой), самые сильные корреляции, сведения об очистке.\nСам выводов не пишет: их формулирует модель по этим цифрам.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dataset_id": {
+            "description": "Идентификатор таблицы. После очистки: из ответа clean_data",
+            "title": "Dataset Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataset_id"
+        ],
+        "title": "collect_findingsArguments"
+      },
+      "outputSchema": {
+        "description": "Ответ collect_findings: цифры, на которых строятся выводы.",
+        "properties": {
+          "dataset_id": {
+            "description": "Идентификатор таблицы. Передавайте его в остальные инструменты",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "facts": {
+            "additionalProperties": true,
+            "description": "Итоги, динамика, сезонность, разрезы по категориям, корреляции и сведения об очистке",
+            "title": "Facts",
+            "type": "object"
+          },
+          "how_to_use": {
+            "description": "Как писать выводы по этим цифрам",
+            "title": "How To Use",
+            "type": "string"
+          },
+          "next_step": {
+            "description": "Что вызвать дальше. Выполняйте, пока анализ не завершён",
+            "title": "Next Step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataset_id",
+          "facts",
+          "how_to_use",
+          "next_step"
+        ],
+        "title": "FindingsResult",
+        "type": "object"
+      }
+    },
+    {
+      "name": "save_report",
+      "description": "Собирает отчёт в Markdown и сохраняет его на диск.\n\nВ отчёт входят: что сделано с данными, все построенные графики\nс подписями, выводы и рекомендации из аргументов, цифры из\ncollect_findings. Возвращает путь к файлу и список того, чего\nотчёту не хватает.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dataset_id": {
+            "description": "Идентификатор таблицы, по которой шёл анализ",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "title": {
+            "description": "Заголовок отчёта",
+            "title": "Title",
+            "type": "string"
+          },
+          "conclusions": {
+            "description": "Ключевые выводы, каждый отдельной строкой с цифрой из collect_findings",
+            "items": {
+              "type": "string"
+            },
+            "title": "Conclusions",
+            "type": "array"
+          },
+          "recommendations": {
+            "description": "Практические рекомендации, каждая отдельной строкой",
+            "items": {
+              "type": "string"
+            },
+            "title": "Recommendations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "dataset_id",
+          "title",
+          "conclusions",
+          "recommendations"
+        ],
+        "title": "save_reportArguments"
+      },
+      "outputSchema": {
+        "description": "Ответ save_report: где лежит отчёт и что в него вошло.",
+        "properties": {
+          "dataset_id": {
+            "description": "Идентификатор таблицы. Передавайте его в остальные инструменты",
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "report_path": {
+            "description": "Путь к отчёту от корня репозитория",
+            "title": "Report Path",
+            "type": "string"
+          },
+          "charts": {
+            "description": "Сколько графиков в отчёте",
+            "title": "Charts",
+            "type": "integer"
+          },
+          "warnings": {
+            "description": "Чего отчёту не хватает. Пустой список: всё на месте",
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "next_step": {
+            "description": "Что вызвать дальше. Выполняйте, пока анализ не завершён",
+            "title": "Next Step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dataset_id",
+          "report_path",
+          "charts",
+          "warnings",
+          "next_step"
+        ],
+        "title": "ReportResult",
+        "type": "object"
+      }
+    }
+  ],
+  "prompts": [
+    {
+      "name": "analyze_file",
+      "title": "Проанализировать файл",
+      "description": "Полный анализ файла: загрузка, очистка, графики, отчёт.",
+      "arguments": [
+        {
+          "name": "file_path",
+          "required": true
+        }
+      ]
+    }
+  ]
+}

@@ -166,7 +166,7 @@ class VisualizationSkill(Skill):
                         "по периодам")],
         freq: Annotated[Literal["auto", "day", "week", "month"], Field(
             description="Шаг по времени. auto выбирает по длине периода: "
-                        "больше 120 дней — месяц, больше 21 дня — неделя, "
+                        "больше 120 дней: месяц, больше 21 дня: неделя, "
                         "иначе день")] = "auto",
         group_col: Annotated[str, Field(
             description="Категория для разбивки на отдельные линии, до "
