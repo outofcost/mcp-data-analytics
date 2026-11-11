@@ -69,11 +69,15 @@ def pick_scale(max_value: float) -> tuple[float, str]:
 
 
 def format_number(value: float) -> str:
-    """Пишет число по-русски: пробел между тысячами, запятая в дроби."""
-    if abs(value) >= 100 or float(value).is_integer():
+    """Пишет число по-русски: пробел между тысячами, запятая в дроби.
+
+    Большие числа округляются до целых, у малых остаётся до двух знаков
+    после запятой без лишних нулей.
+    """
+    if abs(value) >= 100:
         text = f"{value:,.0f}"
     else:
-        text = f"{value:,.1f}"
+        text = f"{value:,.2f}".rstrip("0").rstrip(".")
     return text.replace(",", " ").replace(".", ",")
 
 
