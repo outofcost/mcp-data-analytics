@@ -39,6 +39,10 @@ CHAT_REQUEST = (
     "построй графики и дай рекомендации. Файл лежит на сервере, "
     "прикладывать его не нужно.")
 
+# Текст для тех, кто не нашёл в своём помощнике раздел с коннекторами:
+# помощник знает свой интерфейс и подскажет, где добавить сервер.
+CONNECT_PROMPT = f"Подключись к MCP-серверу analytics по ссылке {SERVER_URL}."
+
 # Блок для файла настроек клиента (Cursor и клиенты с таким же форматом).
 CONFIG = json.dumps({"mcpServers": {"analytics": {"url": SERVER_URL}}},
                     indent=2)
@@ -234,6 +238,12 @@ Add custom connector, вход «No sign in».</li>
 для Claude я прошёл на этом сервере, путь для Cursor сверил с его \
 документацией, путь для ChatGPT не проверял.</p>
 
+<h3>Не нашли, где добавить сервер? Спросите помощника</h3>
+<div class="box">
+<pre id="connect">$connect_prompt</pre>
+<button type="button" data-copy="connect">Скопировать</button>
+</div>
+
 <h3>Остальные случаи</h3>
 <details>
 <summary>Cursor на компьютере читает серверы из файла настроек</summary>
@@ -354,6 +364,7 @@ def build_page(schema: dict) -> str:
         repo_url=html.escape(REPO_URL),
         repo_name=html.escape(REPO_URL.split("//", 1)[-1]),
         example_report=html.escape(EXAMPLE_REPORT),
+        connect_prompt=html.escape(CONNECT_PROMPT),
         config=html.escape(CONFIG),
         chat_request=html.escape(CHAT_REQUEST),
         fallback=html.escape(FALLBACK),
